@@ -53,14 +53,16 @@ if question:
             st.info(answer)
 
             if images:
-                st.subheader("Related Diagrams")
+                st.subheader("Related Figures & Tables")
                 
                 # Display multiple diagrams neatly
                 cols = st.columns(len(images))
                 for idx, img_path in enumerate(images):
                     if os.path.exists(img_path):
                         with cols[idx]:
-                            st.image(img_path, caption=f"Matched Region: {os.path.basename(img_path)}", use_container_width=True)
+                            # Prettify the visual caption (remove confusing .png and underscores)
+                            nice_name = os.path.basename(img_path).replace(".png", "").replace("_", " ").title()
+                            st.image(img_path, caption=f"Matched Region: {nice_name}", use_container_width=True)
                     else:
                         st.error(f"Image not found at path: {img_path}")
                         

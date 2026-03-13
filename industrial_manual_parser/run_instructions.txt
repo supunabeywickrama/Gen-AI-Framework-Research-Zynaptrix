@@ -1,0 +1,19 @@
+# Full System Execution Commands
+
+# 1. Start the PostgreSQL Vector Database
+docker-compose up -d
+
+# 2. Convert PDF Manual to Images
+python parser/pdf_loader.py
+
+# 3. Detect Document Layouts (YOLOv8)
+python parser/layout_detector.py
+
+# 4. Extract Text (EasyOCR) & Chunking
+python processing/ocr_and_chunk.py
+
+# 5. Generate OpenAI Embeddings & Store in pgvector
+python embeddings/openai_embed_chunks.py
+
+# 6. Run the Web Dashboard
+streamlit run dashboard/app.py

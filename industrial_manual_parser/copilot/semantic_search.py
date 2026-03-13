@@ -26,7 +26,7 @@ def get_related_diagrams(chunks=None, limit=3):
     with open(LAYOUT_FILE, "r") as f:
         regions = json.load(f)
         
-    relevant_pages = set()
+    relevant_pages_ordered = []
     
     if chunks:
         # Dynamically map chunks to PDF pages using word overlap
@@ -57,27 +57,41 @@ def get_related_diagrams(chunks=None, limit=3):
                             best_page = page_num
                             
                     if best_score > 0:
-                        relevant_pages.add(f"page_{best_page}.png")
+                        page_str = f"page_{best_page}.png"
+                        if page_str not in relevant_pages_ordered:
+                            relevant_pages_ordered.append(page_str)
         except Exception as e:
             print(f"Failed to load PyMuPDF or link chunk to page: {e}")
         
     diagrams = []
-    # If chunks were provided, filter by their pages. Otherwise fallback to first images.
-    for r in regions:
-        if chunks and r["page"] not in relevant_pages:
-            continue
-            
-        if r.get("type") in ["Picture", "Figure"]:
-            page_name = os.path.splitext(r["page"])[0]
-            region_id = r["region_id"]
-            block_type = r["type"]
-            region_filename = f"{page_name}_region_{region_id}_{block_type}.png"
-            img_path = os.path.join(CROPPED_FOLDER, region_filename)
-            if os.path.exists(img_path):
-                diagrams.append(img_path)
-                
+    
+    if chunks and relevant_pages_ordered:
+        for target_page in relevant_pages_ordered:
+            for r in regions:
+                if r["page"] == target_page and r.get("type") in ["Picture", "Figure", "Table"]:
+                    page_name = os.path.splitext(r["page"])[0]
+                    region_id = r["region_id"]
+                    block_type = r["type"]
+                    region_filename = f"{page_name}_region_{region_id}_{block_type}.png"
+                    img_path = os.path.join(CROPPED_FOLDER, region_filename)
+                    if os.path.exists(img_path) and img_path not in diagrams:
+                        diagrams.append(img_path)
             if len(diagrams) >= limit:
                 break
+    else:
+        # Fallback if no chunks provided
+        for r in regions:
+            if r.get("type") in ["Picture", "Figure", "Table"]:
+                page_name = os.path.splitext(r["page"])[0]
+                region_id = r["region_id"]
+                block_type = r["type"]
+                region_filename = f"{page_name}_region_{region_id}_{block_type}.png"
+                img_path = os.path.join(CROPPED_FOLDER, region_filename)
+                if os.path.exists(img_path):
+                    diagrams.append(img_path)
+                    
+                if len(diagrams) >= limit:
+                    break
                 
     return diagrams
 
