@@ -1,1 +1,1 @@
-# Gen-AI-Framework-Research---Zynaptrix
+# Gen-AI-Framework-Research-Zynaptrix
