@@ -1,6 +1,6 @@
 # User requested ignore
 industrial_manual_parser/data/pages/
-
+industrial_manual_parser/data/cropped
 # Common Python ignores
 __pycache__/
 *.py[cod]

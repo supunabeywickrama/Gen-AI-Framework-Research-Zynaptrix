@@ -1,3 +1,2 @@
-paddlepaddle
-paddleocr
+ultralytics
 opencv-python

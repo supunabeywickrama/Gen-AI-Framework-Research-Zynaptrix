@@ -1,51 +1,37 @@
 import os
 import cv2
 import json
-import numpy as np
-
-# Monkeypatch numpy.bool for compatibility with older PaddleOCR
-if not hasattr(np, 'bool'):
-    np.bool = bool
-
-# Try to import standard-imghdr if installed, or provide internal shim
-try:
-    import imghdr
-except ImportError:
-    # Minimal shim for imghdr.what if needed
-    class ShimImghdr:
-        def what(self, file, h=None):
-            if hasattr(file, 'read'):
-                header = file.read(32)
-            elif isinstance(file, str):
-                with open(file, 'rb') as f:
-                    header = f.read(32)
-            else:
-                header = file[:32]
-            
-            if header.startswith(b'\xff\xd8'): return 'jpeg'
-            if header.startswith(b'\x89PNG\r\n\x1a\n'): return 'png'
-            if header.startswith(b'GIF87a') or header.startswith(b'GIF89a'): return 'gif'
-            return None
-    import sys
-    sys.modules['imghdr'] = ShimImghdr()
-    import imghdr
-
-from paddleocr import PaddleStructure
-
-# Initialize the PaddleOCR structure analysis engine
-print("Loading PaddleOCR Layout Detection Model...")
-# Use layout=True for layout analysis
-engine = PaddleStructure(layout=True, show_log=False)
+import urllib.request
+from ultralytics import YOLO
 
 PAGES_FOLDER = "data/pages"
 CROPPED_FOLDER = "data/cropped"
+MODELS_FOLDER = "data/models"
 METADATA_FILE = "data/layout_regions.json"
+
+# Download a pre-trained YOLOv8 DocLayNet model from Hugging Face
+MODEL_URL = "https://huggingface.co/hantian/yolo-doclaynet/resolve/main/yolov8s-doclaynet.pt"
+MODEL_PATH = os.path.join(MODELS_FOLDER, "yolov8s-doclaynet.pt")
 
 if not os.path.exists(CROPPED_FOLDER):
     os.makedirs(CROPPED_FOLDER)
+if not os.path.exists(MODELS_FOLDER):
+    os.makedirs(MODELS_FOLDER)
+
+if not os.path.exists(MODEL_PATH):
+    print(f"Downloading YOLOv8 DocLayNet model from {MODEL_URL}...")
+    try:
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+        print("Download complete.")
+    except Exception as e:
+        print(f"Failed to download model: {e}")
+        exit(1)
+
+print("Loading YOLO Model...")
+# Load the downloaded model weights
+model = YOLO(MODEL_PATH)
 
 all_regions = []
-
 print(f"Starting layout detection on images in {PAGES_FOLDER}...")
 
 # Filter and sort files to process them in order
@@ -60,20 +46,20 @@ for file in page_files:
         print(f"Could not read {image_path}")
         continue
 
-    # result is a list of dicts, each containing 'type', 'bbox', etc.
-    # PaddleStructure(layout=True) returns a list of results
-    result = engine(image)
+    # Run detection
+    results = model(image, verbose=False)
     
-    if not result:
-        continue
-        
-    detected_blocks = result
+    # Process bounding boxes
+    for i, box in enumerate(results[0].boxes):
+        # Coordinates
+        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+        cls_id = int(box.cls[0].item())
+        conf = float(box.conf[0].item())
+        block_type = model.names[cls_id]
 
-    for i, block in enumerate(detected_blocks):
-        # PaddleOCR bbox format: [x1, y1, x2, y2]
-        bbox = block['bbox']
-        x1, y1, x2, y2 = map(int, bbox)
-        block_type = block['type']
+        # Ignore very low confidence detections
+        if conf < 0.25:
+            continue
 
         # Ensure coordinates are within image bounds
         h, w = image.shape[:2]
@@ -87,7 +73,7 @@ for file in page_files:
         
         # Create a unique filename for each region
         page_name = os.path.splitext(file)[0]
-        region_filename = f"{page_name}_block_{i}.png"
+        region_filename = f"{page_name}_region_{i}_{block_type}.png"
         region_path = os.path.join(CROPPED_FOLDER, region_filename)
         
         cv2.imwrite(region_path, cropped)
@@ -97,6 +83,7 @@ for file in page_files:
             "page": file,
             "region_id": i,
             "type": block_type,
+            "confidence": conf,
             "x1": x1,
             "y1": y1,
             "x2": x2,
