@@ -1,0 +1,5 @@
+layoutparser
+opencv-python
+torch
+torchvision
+detectron2
