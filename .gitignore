@@ -1,0 +1,16 @@
+# User requested ignore
+industrial_manual_parser/data/pages/
+
+# Common Python ignores
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+.env
+.venv
+
+# VS Code
+.vscode/
