@@ -37,22 +37,27 @@ def get_related_diagrams(chunks=None, limit=3):
                 pdf_path = os.path.join(MANUALS_FOLDER, pdf_name)
                 doc = fitz.open(pdf_path)
                 
-                # Pre-extract words for all pages to speed up matching 
-                page_words_map = {}
+                def get_trigrams(text):
+                    words = text.split()
+                    return set(" ".join(words[j:j+3]) for j in range(len(words)-2))
+
+                # Pre-extract trigrams for all pages
+                page_grams_map = {}
                 for i, page in enumerate(doc):
-                    page_words_map[i + 1] = set(page.get_text().lower().split())
+                    page_grams_map[i + 1] = get_trigrams(page.get_text().lower())
                 
                 for chunk in chunks:
-                    chunk_words = set(chunk["text"].lower().split())
+                    chunk_grams = get_trigrams(chunk["text"].lower())
                     best_page = 1
                     best_score = 0
-                    for page_num, page_words in page_words_map.items():
-                        score = len(chunk_words.intersection(page_words))
+                    for page_num, page_grams in page_grams_map.items():
+                        score = len(chunk_grams.intersection(page_grams))
                         if score > best_score:
                             best_score = score
                             best_page = page_num
                             
-                    relevant_pages.add(f"page_{best_page}.png")
+                    if best_score > 0:
+                        relevant_pages.add(f"page_{best_page}.png")
         except Exception as e:
             print(f"Failed to load PyMuPDF or link chunk to page: {e}")
         
