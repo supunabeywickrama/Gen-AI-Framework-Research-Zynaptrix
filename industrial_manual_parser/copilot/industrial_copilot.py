@@ -38,9 +38,9 @@ def ask_copilot(question):
     
     print("\nReasoning with GPT (gpt-4o-mini)...")
     
-    # 2. Retrieve related diagrams
+    # 2. Retrieve related diagrams based on the semantic chunks
     from copilot.semantic_search import get_related_diagrams
-    diagrams = get_related_diagrams(limit=3)
+    diagrams = get_related_diagrams(chunks=retrieved_chunks, limit=3)
     
     # 3. Ask GPT
     response = client.chat.completions.create(

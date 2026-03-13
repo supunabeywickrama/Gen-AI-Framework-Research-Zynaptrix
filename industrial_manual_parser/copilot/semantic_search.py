@@ -13,21 +13,55 @@ if not api_key:
 client = OpenAI(api_key=api_key)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LAYOUT_FILE = os.path.join(PROJECT_ROOT, "data", "layout_regions.json")
-CROPPED_FOLDER = os.path.join(PROJECT_ROOT, "data", "cropped")
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+LAYOUT_FILE = os.path.join(DATA_DIR, "layout_regions.json")
+CROPPED_FOLDER = os.path.join(DATA_DIR, "cropped")
+MANUALS_FOLDER = os.path.join(DATA_DIR, "manuals")
 
-def get_related_diagrams(limit=3):
-    """Retrieves paths to related diagrams or figures found during layout detection."""
+def get_related_diagrams(chunks=None, limit=3):
+    """Retrieves paths to diagrams on the same pages as the retrieved text chunks."""
     if not os.path.exists(LAYOUT_FILE):
         return []
         
     with open(LAYOUT_FILE, "r") as f:
         regions = json.load(f)
         
+    relevant_pages = set()
+    
+    if chunks:
+        # Dynamically map chunks to PDF pages using word overlap
+        try:
+            import fitz
+            pdf_name = next((f for f in os.listdir(MANUALS_FOLDER) if f.endswith(".pdf")), None)
+            if pdf_name:
+                pdf_path = os.path.join(MANUALS_FOLDER, pdf_name)
+                doc = fitz.open(pdf_path)
+                
+                # Pre-extract words for all pages to speed up matching 
+                page_words_map = {}
+                for i, page in enumerate(doc):
+                    page_words_map[i + 1] = set(page.get_text().lower().split())
+                
+                for chunk in chunks:
+                    chunk_words = set(chunk["text"].lower().split())
+                    best_page = 1
+                    best_score = 0
+                    for page_num, page_words in page_words_map.items():
+                        score = len(chunk_words.intersection(page_words))
+                        if score > best_score:
+                            best_score = score
+                            best_page = page_num
+                            
+                    relevant_pages.add(f"page_{best_page}.png")
+        except Exception as e:
+            print(f"Failed to load PyMuPDF or link chunk to page: {e}")
+        
     diagrams = []
+    # If chunks were provided, filter by their pages. Otherwise fallback to first images.
     for r in regions:
-        # Some layouts use "Picture" or "Figure", check both 
-        # (YOLO DocLayNet class usually uses "Picture")
+        if chunks and r["page"] not in relevant_pages:
+            continue
+            
         if r.get("type") in ["Picture", "Figure"]:
             page_name = os.path.splitext(r["page"])[0]
             region_id = r["region_id"]
