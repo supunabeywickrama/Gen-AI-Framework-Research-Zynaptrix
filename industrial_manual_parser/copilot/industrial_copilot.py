@@ -33,7 +33,11 @@ def ask_copilot(question):
     
     print("\nReasoning with GPT (gpt-4o-mini)...")
     
-    # 2. Ask GPT
+    # 2. Retrieve related diagrams
+    from semantic_search import get_related_diagrams
+    diagrams = get_related_diagrams(limit=3)
+    
+    # 3. Ask GPT
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -49,7 +53,14 @@ def ask_copilot(question):
     print("COPILOT ANSWER:")
     print("="*50)
     print(answer)
-    print("="*50)
+    print("\n" + "="*50)
+    
+    if diagrams:
+        print("RELATED DIAGRAMS:")
+        print("="*50)
+        for img_path in diagrams:
+            print(f"- {img_path}")
+        print("="*50)
 
 if __name__ == "__main__":
     import sys

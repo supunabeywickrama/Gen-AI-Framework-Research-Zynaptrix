@@ -1,4 +1,5 @@
 import os
+import json
 import psycopg2
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -10,6 +11,36 @@ if not api_key:
     raise ValueError("OPENAI_API_KEY is not set. Please check your .env file.")
 
 client = OpenAI(api_key=api_key)
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LAYOUT_FILE = os.path.join(PROJECT_ROOT, "data", "layout_regions.json")
+CROPPED_FOLDER = os.path.join(PROJECT_ROOT, "data", "cropped")
+
+def get_related_diagrams(limit=3):
+    """Retrieves paths to related diagrams or figures found during layout detection."""
+    if not os.path.exists(LAYOUT_FILE):
+        return []
+        
+    with open(LAYOUT_FILE, "r") as f:
+        regions = json.load(f)
+        
+    diagrams = []
+    for r in regions:
+        # Some layouts use "Picture" or "Figure", check both 
+        # (YOLO DocLayNet class usually uses "Picture")
+        if r.get("type") in ["Picture", "Figure"]:
+            page_name = os.path.splitext(r["page"])[0]
+            region_id = r["region_id"]
+            block_type = r["type"]
+            region_filename = f"{page_name}_region_{region_id}_{block_type}.png"
+            img_path = os.path.join(CROPPED_FOLDER, region_filename)
+            if os.path.exists(img_path):
+                diagrams.append(img_path)
+                
+            if len(diagrams) >= limit:
+                break
+                
+    return diagrams
 
 def search_manual(query, limit=5):
     """Embeds the user query and retrieves the most relevant chunks from PostgreSQL pgvector."""
