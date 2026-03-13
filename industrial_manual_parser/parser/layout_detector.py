@@ -1,21 +1,11 @@
-import layoutparser as lp
-import cv2
 import os
+import cv2
 import json
+from paddlex import create_pipeline
 
-# Load pre-trained document layout model
-print("Loading Layout Detection Model...")
-model = lp.Detectron2LayoutModel(
-    "lp://PubLayNet/faster_rcnn_R_50_FPN_3x/config",
-    extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.8],
-    label_map={
-        0: "Text",
-        1: "Title",
-        2: "List",
-        3: "Table",
-        4: "Figure"
-    }
-)
+# Initialize the PaddleX layout analysis pipeline
+print("Loading PaddleX Universal Layout Analysis Pipeline...")
+pipeline = create_pipeline(pipeline="universal_layout_analysis")
 
 PAGES_FOLDER = "data/pages"
 CROPPED_FOLDER = "data/cropped"
@@ -35,43 +25,56 @@ for file in page_files:
     image_path = os.path.join(PAGES_FOLDER, file)
     print(f"Processing {file}")
 
-    image = cv2.imread(image_path)
-    if image is None:
-        print(f"Could not read {image_path}")
-        continue
+    # pipeline.predict returns a generator of results
+    results = pipeline.predict(image_path)
+    
+    for res in results:
+        # res['layout'] contains the detected blocks
+        if 'layout' not in res:
+            continue
+            
+        detected_blocks = res['layout']
 
-    layout = model.detect(image)
+        # Read image for cropping if we have blocks
+        image = cv2.imread(image_path)
+        if image is None:
+            continue
 
-    for i, block in enumerate(layout):
-        # Crop region
-        x1 = int(block.block.x_1)
-        y1 = int(block.block.y_1)
-        x2 = int(block.block.x_2)
-        y2 = int(block.block.y_2)
+        for i, block in enumerate(detected_blocks):
+            # PaddleX block format: [x1, y1, x2, y2]
+            bbox = block['bbox']
+            x1, y1, x2, y2 = map(int, bbox)
+            block_type = block['label']
 
-        cropped = image[y1:y2, x1:x2]
-        
-        # Create a unique filename for each region
-        page_name = os.path.splitext(file)[0]
-        region_filename = f"{page_name}_region_{i}.png"
-        region_path = os.path.join(CROPPED_FOLDER, region_filename)
-        
-        cv2.imwrite(region_path, cropped)
+            # Ensure coordinates are within image bounds
+            h, w = image.shape[:2]
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w, x2), min(h, y2)
 
-        # Build metadata
-        region_data = {
-            "page": file,
-            "region_id": i,
-            "type": block.type,
-            "x1": x1,
-            "y1": y1,
-            "x2": x1, # User example had x2 as x2, but let's be safe
-            "y2": y2
-        }
-        # Correcting x2 assignment from my thought
-        region_data["x2"] = x2
-        
-        all_regions.append(region_data)
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            cropped = image[y1:y2, x1:x2]
+            
+            # Create a unique filename for each region
+            page_name = os.path.splitext(file)[0]
+            region_filename = f"{page_name}_block_{i}.png"
+            region_path = os.path.join(CROPPED_FOLDER, region_filename)
+            
+            cv2.imwrite(region_path, cropped)
+
+            # Build metadata
+            region_data = {
+                "page": file,
+                "region_id": i,
+                "type": block_type,
+                "x1": x1,
+                "y1": y1,
+                "x2": x2,
+                "y2": y2
+            }
+            
+            all_regions.append(region_data)
 
 # Save all metadata to JSON
 with open(METADATA_FILE, "w") as f:
