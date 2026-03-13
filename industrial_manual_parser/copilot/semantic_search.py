@@ -62,6 +62,8 @@ def get_related_diagrams(chunks=None, limit=3):
                             relevant_pages_ordered.append(page_str)
         except Exception as e:
             print(f"Failed to load PyMuPDF or link chunk to page: {e}")
+            with open(os.path.join(PROJECT_ROOT, "fitz_error.log"), "w") as err_f:
+                err_f.write(f"Error: {e}")
         
     diagrams = []
     
