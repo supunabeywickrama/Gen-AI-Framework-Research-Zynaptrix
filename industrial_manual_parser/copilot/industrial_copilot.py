@@ -1,7 +1,12 @@
 import os
+import sys
+
+# Ensure the root project directory is in the path to allow `copilot.` module imports when run directly from CLI
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from openai import OpenAI
 from dotenv import load_dotenv
-from semantic_search import search_manual
+from copilot.semantic_search import search_manual
 
 load_dotenv()
 
@@ -23,7 +28,7 @@ def ask_copilot(question):
     retrieved_chunks = search_manual(question, limit=4)
     if not retrieved_chunks:
         print("No context could be retrieved. Ensure database has been seeded.")
-        return
+        return "I could not retrieve any relevant context from the manual database.", []
         
     context_text = "\n\n".join(
         [f"--- Context from Chunk {c['chunk_id']} ---\n{c['text']}" for c in retrieved_chunks]
@@ -34,7 +39,7 @@ def ask_copilot(question):
     print("\nReasoning with GPT (gpt-4o-mini)...")
     
     # 2. Retrieve related diagrams
-    from semantic_search import get_related_diagrams
+    from copilot.semantic_search import get_related_diagrams
     diagrams = get_related_diagrams(limit=3)
     
     # 3. Ask GPT
@@ -61,6 +66,8 @@ def ask_copilot(question):
         for img_path in diagrams:
             print(f"- {img_path}")
         print("="*50)
+        
+    return answer, diagrams
 
 if __name__ == "__main__":
     import sys
