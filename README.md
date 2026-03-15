@@ -15,6 +15,43 @@ It allows engineers and technicians to ask natural language questions about mach
 
 ---
 
+## 🏗️ System Workflow Architecture
+
+```mermaid
+graph TD
+    classDef ingest fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px,color:#000;
+    classDef vision fill:#FFF3E0,stroke:#F57C00,stroke-width:2px,color:#000;
+    classDef db fill:#F3E5F5,stroke:#8E24AA,stroke-width:2px,color:#000;
+    classDef ai fill:#E8F5E9,stroke:#43A047,stroke-width:2px,color:#000;
+    classDef ui fill:#FFF9C4,stroke:#FBC02D,stroke-width:2px,color:#000;
+
+    subgraph "🛠️ 1. Data Ingestion & Processing"
+        A[📄 PDF Manual]:::ingest -->|pdf2image| B(🖼️ Images):::vision
+        B -->|YOLOv8 DocLayNet| C{Layout Bounding Boxes}:::vision
+        C -->|Text & Lists| D[EasyOCR]:::ingest
+        C -->|Figures & Tables| E[Cropped Visuals]:::vision
+        D -->|Sliding Window Chunking| F[Contextual Text Chunks]:::ingest
+    end
+
+    subgraph "🧠 2. Knowledge Storage"
+        F -->|OpenAI Embeddings| G[(PostgreSQL Vector DB)]:::db
+    end
+
+    subgraph "💬 3. Multimodal Copilot Search"
+        H((👩‍🔧 Engineer)):::ui -->|Natural Language Query| I[💻 Streamlit Dashboard]:::ui
+        I -->|Vector Query| G
+        G -->|Top Semantic Chunks| J[Retrieved Text Context]:::ingest
+        J -->|PyMuPDF Trigram Mapping| E
+        E -.->|Context-Aware Image Match| K[Relevant Diagram]:::vision
+        J -->|Synthesize Info| L(🤖 GPT-4o-mini Copilot):::ai
+        L -->|Reasoned Answer| M[✨ Multimodal Output]:::ai
+        K --> M
+        M -->|Displays Text + Images| I
+    end
+```
+
+---
+
 ## 🚀 How to Install and Run Locally
 
 If you are cloning this repository for the very first time, follow these precise steps to get the full pipeline running.
