@@ -1,0 +1,9 @@
+ultralytics
+opencv-python
+easyocr
+Pillow
+openai
+psycopg2-binary
+pgvector
+python-dotenv
+streamlit
