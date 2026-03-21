@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, AlertTriangle, ShieldCheck, Zap, Server, MessageSquare, Send } from 'lucide-react';
+import { Activity, AlertTriangle, ShieldCheck, Server, MessageSquare, Send, Thermometer, Gauge, Activity as VibrateIcon, UploadCloud, FileText, CheckCircle, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
@@ -13,22 +13,29 @@ export default function IndustrialCopilotDashboard() {
   const [query, setQuery] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Upload States
+  const [manualId, setManualId] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+
   // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
+
+  const latestReading = telemetry[telemetry.length - 1] || { temperature: 0, pressure: 0, vibration: 0 };
 
   const handleManualInquiry = async () => {
     if (!query) return;
     dispatch(addChatMessage({ role: 'user', content: query }));
     setQuery('');
     
-    // Call LangGraph Backend
     // For simplicity, we just push the analyzing message...
     dispatch(addChatMessage({ role: 'agent', content: 'Analyzing factory status deeply using Multi-Agent LangGraph...' }));
     
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500';
       const res = await fetch(`${apiUrl}/api/copilot/invoke`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -36,20 +43,48 @@ export default function IndustrialCopilotDashboard() {
           machine_state: systemState === "NORMAL" ? "manual_inquiry_normal" : "anomaly_investigation",
           anomaly_score: anomalyScore,
           suspect_sensor: "User Query",
-          recent_readings: telemetry[telemetry.length - 1]
+          recent_readings: latestReading
         })
       });
       const data = await res.json();
-      
-      // Dispatch final result natively
       dispatch(addChatMessage({ role: 'agent', content: data.graph_result?.final_execution_plan || "Diagnostics complete." }));
     } catch (e) {
       dispatch(addChatMessage({ role: 'agent', content: 'Connection to AI Orchestrator Failed.' }));
     }
   };
 
+  const handleUpload = async () => {
+    if (!uploadFile || !manualId) return;
+    setIsUploading(true);
+    setUploadStatus("Uploading to YOLOv8 Pipeline...");
+
+    const formData = new FormData();
+    formData.append("manual_id", manualId);
+    formData.append("file", uploadFile);
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500';
+      const res = await fetch(`${apiUrl}/ingest-manual`, {
+         method: 'POST',
+         body: formData
+      });
+      
+      if (res.ok) {
+         setUploadStatus("Ingestion Successful!");
+         dispatch(addChatMessage({ role: 'agent', content: `📚 Manual "${manualId}" successfully ingested and vectorized.` }));
+         setTimeout(() => { setUploadStatus(null); setManualId(""); setUploadFile(null); }, 3000);
+      } else {
+         const errorData = await res.json();
+         setUploadStatus(`Error: ${errorData.detail || "Upload failed"}`);
+      }
+    } catch(e) {
+      setUploadStatus("Connection Error to Backend.");
+    }
+    setIsUploading(false);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30">
+    <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-x-hidden">
       <header className="flex justify-between items-center mb-8 border-b-2 border-slate-800 pb-6 bg-slate-900/40 backdrop-blur-md shadow-xl rounded-xl p-6">
         <div>
           <h1 className="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent flex items-center gap-3">
@@ -66,15 +101,42 @@ export default function IndustrialCopilotDashboard() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[calc(100vh-140px)]">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-10">
         
         {/* Left Column: Telemetry & Models */}
-        <div className="lg:col-span-2 flex flex-col gap-8">
+        <div className="xl:col-span-2 flex flex-col gap-8">
           
+          {/* SENSOR KPI CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-blue-500/50 transition-colors">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                 <Thermometer size={64} className="text-blue-500" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Thermometer size={16} className="text-blue-400"/> Temperature</h3>
+              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.temperature.toFixed(1)} <span className="text-lg text-slate-500">°C</span></p>
+            </div>
+            
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-emerald-500/50 transition-colors">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                 <Gauge size={64} className="text-emerald-500" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Gauge size={16} className="text-emerald-400"/> Pressure</h3>
+              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.pressure.toFixed(1)} <span className="text-lg text-slate-500">bar</span></p>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-amber-500/50 transition-colors">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                 <VibrateIcon size={64} className="text-amber-500" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><VibrateIcon size={16} className="text-amber-400"/> Vibration</h3>
+              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.vibration.toFixed(2)} <span className="text-lg text-slate-500">mm/s</span></p>
+            </div>
+          </div>
+
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 absolute pointer-events-none translate-x-1/2 -translate-y-1/2"></div>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 pointer-events-none translate-x-1/2 -translate-y-1/2"></div>
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-100">
-              <Activity className="text-indigo-400" /> Live Sensor Telemetry
+              <Activity className="text-indigo-400" /> Live Sensor Telemetry Timeline
             </h2>
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -87,14 +149,14 @@ export default function IndustrialCopilotDashboard() {
                     itemStyle={{ color: '#e2e8f0' }}
                   />
                   <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} name="Temp (°C)" />
-                  <Line type="monotone" dataKey="pressure" stroke="#10b981" strokeWidth={3} dot={false} name="Pressure (psi)" />
+                  <Line type="monotone" dataKey="pressure" stroke="#10b981" strokeWidth={3} dot={false} name="Pressure (bar)" />
                   <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} name="Vibration (mm/s)" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-4">Anomaly Engine</h3>
                <div className="flex justify-between items-end">
@@ -102,34 +164,70 @@ export default function IndustrialCopilotDashboard() {
                     <p className="text-4xl font-light text-slate-100">{anomalyScore.toFixed(3)}</p>
                     <p className="text-sm text-slate-500 mt-1">Reconstruction MSE</p>
                   </div>
-                  <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500">
+                  <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 shadow-inner">
                     <ShieldCheck size={24} />
                   </div>
                </div>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-4">Active AI Agents</h3>
-               <div className="flex gap-2">
-                 {activeAgents.map(agent => (
-                   <span key={agent} className="px-2 py-1 text-xs font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                     {agent}
-                   </span>
-                 ))}
+
+            {/* RAG DOCUMENT PIPELINE */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between relative">
+               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                 <UploadCloud size={16} className="text-indigo-400"/> RAG Knowledge Ingestion
+               </h3>
+               
+               <div className="space-y-3 relative z-10">
+                 <input 
+                   type="text" 
+                   value={manualId}
+                   onChange={(e) => setManualId(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                   placeholder="Manual ID (e.g. Pump_Manual_v1)" 
+                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                   disabled={isUploading}
+                 />
+                 
+                 <div className="flex gap-2 items-center">
+                   <label className="flex-1 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 cursor-pointer border border-slate-700 rounded-lg py-2 px-4 transition-colors text-sm font-semibold">
+                     <FileText size={16} />
+                     <span className="truncate max-w-[120px]">{uploadFile ? uploadFile.name : "Select PDF Document"}</span>
+                     <input 
+                       type="file" 
+                       accept="application/pdf" 
+                       className="hidden" 
+                       onChange={(e) => setUploadFile(e.target.files ? e.target.files[0] : null)}
+                       disabled={isUploading}
+                     />
+                   </label>
+                   <button 
+                     onClick={handleUpload}
+                     disabled={!uploadFile || !manualId || isUploading}
+                     className="bg-indigo-600 disabled:bg-slate-800 disabled:text-slate-500 hover:bg-indigo-500 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/20"
+                   >
+                     {isUploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
+                     Upload
+                   </button>
+                 </div>
+                 {uploadStatus && (
+                   <p className={`text-xs font-semibold flex items-center gap-1 ${uploadStatus.includes('Success') ? 'text-emerald-400' : uploadStatus.includes('Error') ? 'text-red-400' : 'text-blue-400'}`}>
+                     {uploadStatus.includes('Success') ? <CheckCircle size={14} /> : uploadStatus.includes('Error') ? <AlertTriangle size={14} /> : <Loader2 size={14} className="animate-spin"/>}
+                     {uploadStatus}
+                   </p>
+                 )}
                </div>
             </div>
           </div>
         </div>
 
         {/* Right Column: AI Interaction */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative h-[calc(100vh-140px)]">
           <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
-          <div className="p-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-10">
+          <div className="p-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-10 flex justify-between items-center">
             <h2 className="text-xl font-bold flex items-center gap-2 text-slate-100">
               <MessageSquare className="text-blue-400" /> Human-in-the-Loop
             </h2>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
             {chatHistory.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${

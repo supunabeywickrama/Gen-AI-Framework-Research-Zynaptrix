@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Replaced localized credentials with a universal Neon DB capable URL format
@@ -6,8 +6,6 @@ class Settings(BaseSettings):
     
     openai_api_key: str = ""
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = 'utf-8'
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

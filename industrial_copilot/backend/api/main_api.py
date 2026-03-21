@@ -66,7 +66,7 @@ class AnomalyEvent(BaseModel):
     machine_state: str
     anomaly_score: float
     suspect_sensor: Optional[str] = "Unknown"
-    recent_readings: Optional[Dict[str, float]] = None
+    recent_readings: Optional[Dict[str, Any]] = None
 
 @app.post("/api/copilot/invoke")
 async def invoke_copilot(event: AnomalyEvent):
