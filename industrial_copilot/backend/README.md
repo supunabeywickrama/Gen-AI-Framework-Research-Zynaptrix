@@ -1,76 +1,66 @@
-# 🏭 Industrial AI Copilot
+# 🏭 Industrial AI Copilot — Backend
 
-> **Predictive Maintenance System for Tea Bag Packing Machines**  
-> An end-to-end framework for anomaly detection, root cause analysis, and maintenance strategy generation using GenAI and Time-Series data.
+> **Predictive Maintenance System for Industrial Packing Machines**  
+> A research-grade framework for real-time anomaly detection, multimodal RAG retrieval, and LLM-based strategy orchestration.
 
 ---
 
 ## 🛠️ Tech Stack & Architecture
 
-- **Backend**: FastAPI (Python 3.10+)
-- **Frontend**: Streamlit Dashboard
-- **Database**: InfluxDB (Time-series) & Neon PostgreSQL (pgvector for Knowledge Base)
-- **AI/LLM**: Google Gemini (Synthesis) & OpenAI / Sentence-Transformers (Embeddings)
-- **Analytics**: TensorFlow/Keras (Autoencoder for Anomaly Detection)
+- **Core**: FastAPI (Python 3.10+)
+- **Frontend**: Next.js 14+ (Dashboard)
+- **Database**: Neon PostgreSQL (with `pgvector` for context)
+- **Unified RAG**: 
+  - **Layout Detection**: YOLOv8-DocLayout
+  - **Vision**: OpenAI GPT-4o for technical diagram captioning
+  - **Embeddings**: HuggingFace CLIP (Multimodal)
+- **Analytics**: TensorFlow/Keras (Dense Autoencoder for Anomaly Detection)
+- **Orchestration**: LangGraph (Multi-agent coordination)
 
 ---
 
-## 📖 System Manual Running Procedure
+## 📖 Running the System
 
-To run the full Industrial AI Copilot system, ensure your environment is set up (see [GETTING_STARTED.md](GETTING_STARTED.md)) and follow these steps. It is recommended to use three separate terminal windows/slots:
+Ensure your backend environment is active (using `.venv`) and follow these steps:
 
-### 1️⃣ Start the Backend API
-The FastAPI backend handles anomaly routing and agent orchestration.
+### 1. Start the Backend API
+The FastAPI backend handles anomaly detection, telemetry streaming, and RAG orchestration.
 ```bash
-# In Terminal 1
-cd industrial-ai-copilot
-uvicorn api.main_api:app --reload
+# From the industrial_copilot/backend folder
+.venv\Scripts\python -m uvicorn api.main_api:app --host 0.0.0.0 --port 8500 --reload
 ```
-*Access API Docs at: http://localhost:8000/docs*
+*Access API Docs at: http://localhost:8500/docs*
 
-### 2️⃣ Start the Dashboard
-The Streamlit interface provides live visualizations and the AI Copilot chat.
-```bash
-# In Terminal 2
-cd industrial-ai-copilot
-streamlit run dashboard/streamlit_dashboard.py
-```
-*Access Dashboard at: http://localhost:8501*
-
-### 3️⃣ Start the Sensor Simulator
-Streams real-time sensor data into InfluxDB for the system to analyze.
-```bash
-# In Terminal 3
-cd industrial-ai-copilot
-python -m simulator.sensor_simulator
-```
-
----
-
-## 🚀 Quick Setup Guide
-
-1. **Install Dependencies**: `pip install -r requirements.txt`
-2. **Environment Variables**: Configure `.env` (see `GETTING_STARTED.md` for template).
-3. **Initialize DB**: `psql $NEON_DB_URL -f database/schema.sql`
-4. **Prepare Data**:
-   - `python generate_dataset.py` (Create mock data)
-   - `python -m models.train_model` (Train anomaly model)
-   - `python -m vector_pipeline.vector_uploader` (Index knowledge base)
-
-For the full detailed setup, please refer to:  
-👉 **[GETTING_STARTED.md](GETTING_STARTED.md)**
+### 2. Pre-Running Checklist
+Before using the full system, ensure these artifacts are generated:
+- **Mock Data**: `python generate_dataset.py`
+- **Normalization**: `python -m preprocessing.normalization`
+- **Train Anomaly Model**: `python models/train_model.py` (Creates `autoencoder.keras`)
+- **Ingest PDF Manuals**: Use the `/ingest-manual` endpoint or the Frontend Dashboard.
 
 ---
 
 ## 📂 Project Structure
 
 ```bash
-industrial-ai-copilot/
-├── agents/             # Knowledge, Health, and Strategy agents
-├── api/                # FastAPI endpoints
-├── dashboard/          # Streamlit UI components
-├── database/           # PostgreSQL/pgvector schema & CRUD
-├── models/             # ML training & inference logic
-├── simulator/          # Live sensor data streaming
-└── vector_pipeline/    # Documentation indexing (RAG)
+industrial_copilot/backend/
+├── agents/             # LangGraph orchestrators & tool-specific agents
+├── api/                # FastAPI routes (Telemetry, RAG, Anomaly)
+├── config/             # Environment & Sensor schema settings
+├── data/               # Persistent storage for manuals and models
+├── models/             # Autoencoder logic & YOLOv8 weights
+├── preprocessing/      # Data standardization pipelines
+├── services/           # Anomaly tracking & Alert logic
+└── unified_rag/        # Core Multimodal RAG Engine (Parser, Embedder, Retriever)
 ```
+
+---
+
+## 🚀 Unified RAG Capabilities
+The `unified_rag` module supports true multimodal retrieval:
+1. **Layout Parsing**: Automatically separates text, tables, and figures from technical PDFs.
+2. **Visual Intelligence**: Technical diagrams are interpreted by GPT-4o Vision to generate searchable captions.
+3. **Multimodal Search**: Users can search for specific spare parts or machine settings, and the system can retrieve the exact diagram from the manual.
+
+---
+*Developed for Zynaptrix Industrial Research*

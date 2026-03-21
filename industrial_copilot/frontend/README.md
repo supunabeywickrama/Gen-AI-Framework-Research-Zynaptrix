@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📊 Industrial AI Copilot — Dashboard
 
-## Getting Started
+> **Real-time Predictive Maintenance & Multimodal Chat Interface**  
+> Built with Next.js 14, Tailwind CSS, and Recharts.
 
-First, run the development server:
+---
 
+## 🚀 Overview
+The Industrial AI Dashboard provides a unified interface for monitoring machine health and interacting with technical documentation via a multimodal RAG system.
+
+### Key Features
+- **Live Telemetry**: Real-time visualization of temperature, current, vibration, and speed.
+- **Anomaly Highlighting**: Instant visual feedback when the backend autoencoder detects deviations.
+- **Multimodal RAG Chat**: 
+  - Interact with AGENTIC copilot for maintenance strategies.
+  - **Visual Retrieval**: The system can retrieve and display exact diagrams/figures from ingested PDF manuals.
+- **Manual Management**: Direct PDF upload for automated parsing, captioning, and indexing.
+
+---
+
+## 🛠️ Development
+
+### 1. Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# From the industrial_copilot/frontend folder
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure Environment
+Create a `.env.local` file in the root of the frontend folder:
+```env
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8500
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Start Development Server
+```bash
+npm run dev
+```
+*Access the Dashboard at: http://localhost:3000*
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 📂 Structure
+- `src/app/`: Core page logic and routing.
+- `src/components/`: Reusable UI components (Charts, Chat, Sidebar).
+- `src/hooks/`: Custom React hooks for WebSocket and API state management.
+- `public/`: Static assets and icons.
 
-To learn more about Next.js, take a look at the following resources:
+---
+*Powered by Zynaptrix Advanced Agentic Coding*
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
