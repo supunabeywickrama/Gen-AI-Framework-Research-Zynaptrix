@@ -10,6 +10,7 @@ interface TelemetryPoint {
 export interface ChatMessage {
   role: 'agent' | 'user';
   content: string;
+  images?: string[];
 }
 
 interface CopilotState {

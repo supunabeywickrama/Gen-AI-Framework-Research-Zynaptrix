@@ -100,14 +100,18 @@ def simulate(interval_seconds: float = 1.0):
 
             # Write to InfluxDB with HTTP fallback
             try:
+                # Try Influx
                 writer.write_sensor_reading(reading, state=state)
             except Exception as e:
-                import requests
-                api_url = os.getenv("API_URL", "http://127.0.0.1:8000")
-                try:
-                    requests.post(f"{api_url}/anomaly/detect", json=reading, timeout=2)
-                except Exception as ex:
-                    pass
+                pass
+            
+            # Broadcast to UI WebSockets
+            import requests
+            api_url = os.getenv("API_URL", "http://127.0.0.1:8500")
+            try:
+                requests.post(f"{api_url}/api/telemetry/push", json=reading, timeout=2)
+            except Exception as ex:
+                pass
 
             logger.info(
                 f"  [{state:15s}] temp={reading['temperature']:.2f}°C  "

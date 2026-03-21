@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 pydantic-settings
 sqlalchemy
@@ -9,6 +9,10 @@ pymupdf
 easyocr
 camelot-py[cv]
 ultralytics
+transformers
+torch
+torchvision
+opencv-python-headless
 huggingface_hub
 openai
 langchain
@@ -22,7 +26,7 @@ pandas
 numpy
 python-multipart
 python-dotenv
-cloudinary
+# cloudinary removed - using local storage
 Pillow
 matplotlib
 plotly

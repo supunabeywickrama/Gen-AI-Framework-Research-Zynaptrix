@@ -1,10 +1,10 @@
 "use client"
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, AlertTriangle, ShieldCheck, Server, MessageSquare, Send, Thermometer, Gauge, Activity as VibrateIcon, UploadCloud, FileText, CheckCircle, Loader2 } from 'lucide-react';
+import { Activity, AlertTriangle, ShieldCheck, Server, MessageSquare, Send, Thermometer, Gauge, Activity as VibrateIcon, UploadCloud, FileText, CheckCircle, Loader2, Play, Square } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
-import { addChatMessage } from '../store/slices/copilotSlice';
+import { addChatMessage, addTelemetry, setSystemState, setAnomalyScore } from '../store/slices/copilotSlice';
 
 export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
@@ -18,6 +18,71 @@ export default function IndustrialCopilotDashboard() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // WebSocket Telemetry Stream
+  useEffect(() => {
+    let ws: WebSocket;
+    let reconnectTimer: NodeJS.Timeout;
+
+    const connectWS = () => {
+      const wsUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500').replace('http', 'ws');
+      ws = new WebSocket(`${wsUrl}/ws/telemetry`);
+      
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          
+          if (parsed.type === "telemetry") {
+            const data = parsed.data;
+            dispatch(addTelemetry({
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              temperature: data.temperature,
+              pressure: data.pressure,
+              vibration: data.vibration
+            }));
+          } else if (parsed.type === "anomaly_alert") {
+            const result = parsed.data;
+            dispatch(setSystemState('ANOMALY'));
+            dispatch(setAnomalyScore(result.anomaly_score || 0.99));
+            
+            const alertMessage = `🚨 **CRITICAL ANOMALY EVENT TRIGGERED**\n\n**Suspected System**: ${result.suspect_sensor}\n\n**AI Diagnostic Procedure:**\n${result.strategy || result.final_execution_plan}\n\n**RAG Knowledge Base Context:**\n${result.rag_advice || "No context found."}`;
+            dispatch(addChatMessage({ 
+              role: 'agent', 
+              content: alertMessage,
+              images: result.retrieved_images || []
+            }));
+          }
+        } catch (err) {
+          console.error("Telemetry parsing error:", err);
+        }
+      };
+
+      ws.onclose = () => {
+        reconnectTimer = setTimeout(connectWS, 3000); // Self-heal after backend crash/restart
+      };
+      
+      ws.onerror = () => {
+        ws.close();
+      };
+    };
+
+    connectWS();
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        ws.onclose = null; // Prevent infinite re-mounting loops
+        ws.close();
+      }
+    };
+  }, [dispatch]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -47,7 +112,11 @@ export default function IndustrialCopilotDashboard() {
         })
       });
       const data = await res.json();
-      dispatch(addChatMessage({ role: 'agent', content: data.graph_result?.final_execution_plan || "Diagnostics complete." }));
+      dispatch(addChatMessage({ 
+        role: 'agent', 
+        content: data.graph_result?.final_execution_plan || "Diagnostics complete.",
+        images: data.graph_result?.retrieved_images || []
+      }));
     } catch (e) {
       dispatch(addChatMessage({ role: 'agent', content: 'Connection to AI Orchestrator Failed.' }));
     }
@@ -81,6 +150,19 @@ export default function IndustrialCopilotDashboard() {
       setUploadStatus("Connection Error to Backend.");
     }
     setIsUploading(false);
+  };
+
+  const toggleSimulation = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500';
+      const endpoint = isSimulating ? '/api/simulator/stop' : '/api/simulator/start';
+      const res = await fetch(`${apiUrl}${endpoint}`, { method: 'POST' });
+      if (res.ok) {
+        setIsSimulating(!isSimulating);
+      }
+    } catch (e) {
+      console.error("Failed to toggle simulation", e);
+    }
   };
 
   return (
@@ -135,24 +217,35 @@ export default function IndustrialCopilotDashboard() {
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 pointer-events-none translate-x-1/2 -translate-y-1/2"></div>
-            <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-slate-100">
-              <Activity className="text-indigo-400" /> Live Sensor Telemetry Timeline
-            </h2>
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={telemetry} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="time" stroke="#475569" tick={{fill: '#94a3b8'}} />
-                  <YAxis stroke="#475569" tick={{fill: '#94a3b8'}} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }}
-                    itemStyle={{ color: '#e2e8f0' }}
-                  />
-                  <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} name="Temp (°C)" />
-                  <Line type="monotone" dataKey="pressure" stroke="#10b981" strokeWidth={3} dot={false} name="Pressure (bar)" />
-                  <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} name="Vibration (mm/s)" />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="flex justify-between items-center mb-6 z-10 relative">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-100">
+                <Activity className="text-indigo-400" /> Live Sensor Telemetry Timeline
+              </h2>
+              <button
+                onClick={toggleSimulation}
+                className={`px-4 py-2 rounded-lg font-bold text-sm tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg ${isSimulating ? 'bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500/30' : 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/30'}`}
+              >
+                {isSimulating ? <Square size={14} /> : <Play size={14} />}
+                {isSimulating ? "Stop Simulator" : "Start Simulator"}
+              </button>
+            </div>
+            <div className="h-[300px] w-full relative">
+              {isMounted && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={telemetry} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                    <XAxis dataKey="time" stroke="#475569" tick={{fill: '#94a3b8'}} />
+                    <YAxis stroke="#475569" tick={{fill: '#94a3b8'}} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }}
+                      itemStyle={{ color: '#e2e8f0' }}
+                    />
+                    <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} name="Temp (°C)" />
+                    <Line type="monotone" dataKey="pressure" stroke="#10b981" strokeWidth={3} dot={false} name="Pressure (bar)" />
+                    <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} name="Vibration (mm/s)" />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -235,6 +328,23 @@ export default function IndustrialCopilotDashboard() {
                     ? 'bg-blue-600 text-white rounded-br-none' 
                     : 'bg-slate-800 text-slate-200 border border-slate-700/50 rounded-bl-none leading-relaxed'                }`}>
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  
+                  {msg.images && msg.images.length > 0 && (
+                    <div className="mt-4 grid grid-cols-1 gap-3">
+                      {msg.images.map((imgUrl, imgIdx) => (
+                        <div key={imgIdx} className="rounded-lg overflow-hidden border border-slate-700 bg-slate-900/50">
+                          <img 
+                            src={imgUrl} 
+                            alt={`Retrieved Diagram ${imgIdx + 1}`}
+                            className="w-full h-auto max-h-64 object-contain cursor-zoom-in hover:scale-[1.02] transition-transform"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

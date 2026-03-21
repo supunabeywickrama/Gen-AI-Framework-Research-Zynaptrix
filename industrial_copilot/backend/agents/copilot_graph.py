@@ -1,10 +1,11 @@
 import logging
-from typing import TypedDict, Dict, Any, Optional
+import os
+from typing import TypedDict, Dict, Any, Optional, List
 from langgraph.graph import StateGraph, END
 
 # EXPLICITLY IMPORTING THE IMPROVED RAG SYSTEM HERE!
 try:
-    from rag_retrieval.rag import RAGGenerator
+    from unified_rag.retrieval.rag import RAGGenerator
     rag_gen = RAGGenerator()
 except Exception:
     rag_gen = None
@@ -23,6 +24,7 @@ class CopilotState(TypedDict):
     sensor_status_report: str
     diagnostic_report: str
     rag_context: str
+    retrieved_images: List[str]
     strategy_report: str
     critic_feedback: str
     final_execution_plan: str
@@ -39,22 +41,38 @@ def diagnostic_node(state: CopilotState):
     return {"diagnostic_report": report}
 
 def knowledge_retrieval_node(state: CopilotState):
-    logger.info("🤖 [Agent] Knowledge Retrieval (Powered by Improved RAG)")
+    logger.info("🤖 [Agent] Knowledge Retrieval (Powered by Improved Unified RAG)")
     query = f"Provide repair instructions and troubleshooting steps for {state['machine_state']}."
     
+    images = []
     if rag_gen:
         try:
-            # Connect the improved PGVector/YOLOv8 pipeline dynamically!
-            # It queries the manual ID associated with this machine class
-            # "lathe_machine_v1" was used in earlier tests; ideally this is dynamic.
-            rag_response = rag_gen.generate_response(query, "lathe_machine_v1")
-            rag = f"RAG Extract: {rag_response['answer']} \n[Retrieved Diagrams: {len(rag_response['images'])}]"
+            # DYNAMIC MANUAL SELECTION: Fetch the most recent manual ID from DB
+            from unified_rag.db.database import SessionLocal
+            from sqlalchemy import desc
+            from unified_rag.db.models import ManualChunk
+            
+            db = SessionLocal()
+            latest_chunk = db.query(ManualChunk.manual_id).order_by(desc(ManualChunk.id)).first()
+            manual_id = latest_chunk[0] if latest_chunk else "lathe_machine_v1"
+            db.close()
+            
+            rag_response = rag_gen.generate_response(query, manual_id)
+            
+            # Convert local paths to public static URLs
+            api_url = os.getenv("API_URL", "http://localhost:8500")
+            for img_path in rag_response.get("images", []):
+                # img_path is like "data/extracted/file.png"
+                web_path = img_path.replace("data/", "/static/")
+                images.append(f"{api_url}{web_path}")
+                
+            rag = f"RAG Extract: {rag_response['answer']} \n[Retrieved Diagrams: {len(images)}]"
         except Exception as e:
             rag = f"RAG Extract Failed: {str(e)}"
     else:
         rag = f"Manual Extract: If {state['machine_state']} occurs, immediately calibrate."
         
-    return {"rag_context": rag}
+    return {"rag_context": rag, "retrieved_images": images}
 
 def strategy_node(state: CopilotState):
     logger.info("🤖 [Agent] Strategy")
