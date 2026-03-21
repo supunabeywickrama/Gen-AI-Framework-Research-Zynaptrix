@@ -50,7 +50,7 @@ export default function IndustrialCopilotDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30">
-      <header className="flex justify-between items-center mb-8 border-b border-slate-800 pb-6 glass-panel">
+      <header className="flex justify-between items-center mb-8 border-b-2 border-slate-800 pb-6 bg-slate-900/40 backdrop-blur-md shadow-xl rounded-xl p-6">
         <div>
           <h1 className="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent flex items-center gap-3">
             <Server className="text-blue-500" />

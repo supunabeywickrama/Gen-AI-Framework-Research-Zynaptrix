@@ -1,12 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer utilities {
-  .glass-panel {
-    @apply bg-slate-900/40 backdrop-blur-md border border-slate-700/50 shadow-xl;
-  }
-}
+@import "tailwindcss";
 
 body {
   background-color: #020617; /* slate-950 */
