@@ -23,3 +23,10 @@ numpy
 python-multipart
 python-dotenv
 cloudinary
+Pillow
+matplotlib
+plotly
+pytest
+requests
+sentence-transformers
+streamlit
