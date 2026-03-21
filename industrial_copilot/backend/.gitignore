@@ -1,0 +1,8 @@
+.env
+__pycache__
+.venv
+docker-compose.yml
+venv
+Lib
+data/extracted
+data/uploads

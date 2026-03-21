@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  api:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: factory_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    command: uvicorn api.main_api:app --host 0.0.0.0 --port 8000
+
+  dashboard:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: factory_dashboard
+    ports:
+      - "8501:8501"
+    env_file:
+      - backend/.env
+    environment:
+      - API_URL=http://api:8000
+    command: streamlit run dashboard/streamlit_dashboard.py --server.address=0.0.0.0
+    depends_on:
+      - api
+
+  simulator:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: factory_simulator
+    env_file:
+      - backend/.env
+    environment:
+      - API_URL=http://api:8000
+    command: python simulator/sensor_simulator.py
+    depends_on:
+      - api
+
+  listener:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: factory_listener
+    env_file:
+      - backend/.env
+    environment:
+      - API_URL=http://api:8000
+    command: python ingestion/stream_listener.py
+    depends_on:
+      - api
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: factory_frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - frontend/.env
+    depends_on:
+      - api
