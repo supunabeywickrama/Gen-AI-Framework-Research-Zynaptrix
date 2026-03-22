@@ -32,7 +32,8 @@ export default function IndustrialCopilotDashboard() {
     let reconnectTimer: NodeJS.Timeout;
 
     const connectWS = () => {
-      const wsUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500').replace('http', 'ws');
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const wsUrl = base.replace('http', 'ws');
       ws = new WebSocket(`${wsUrl}/ws/telemetry`);
       
       ws.onmessage = (event) => {
@@ -44,7 +45,7 @@ export default function IndustrialCopilotDashboard() {
             dispatch(addTelemetry({
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               temperature: data.temperature,
-              pressure: data.pressure,
+              current: data.motor_current,
               vibration: data.vibration
             }));
           } else if (parsed.type === "anomaly_alert") {
@@ -89,7 +90,7 @@ export default function IndustrialCopilotDashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
-  const latestReading = telemetry[telemetry.length - 1] || { temperature: 0, pressure: 0, vibration: 0 };
+  const latestReading = telemetry[telemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
 
   const handleManualInquiry = async () => {
     if (!query) return;
@@ -154,11 +155,25 @@ export default function IndustrialCopilotDashboard() {
 
   const toggleSimulation = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500';
+      // Robust dynamic host detection for local network testing
+      let base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      if (typeof window !== 'undefined' && base.includes('127.0.0.1') || base.includes('localhost')) {
+          const currentHost = window.location.hostname;
+          if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
+              base = `http://${currentHost}:8000`;
+          }
+      }
+      
+      const apiUrl = base.endsWith('/') ? base.slice(0, -1) : base;
       const endpoint = isSimulating ? '/api/simulator/stop' : '/api/simulator/start';
+      
+      console.log(`📡 Sending simulation toggle to: ${apiUrl}${endpoint}`);
       const res = await fetch(`${apiUrl}${endpoint}`, { method: 'POST' });
       if (res.ok) {
         setIsSimulating(!isSimulating);
+      } else {
+        const err = await res.json();
+        console.error("Simulation failed:", err);
       }
     } catch (e) {
       console.error("Failed to toggle simulation", e);
@@ -202,8 +217,8 @@ export default function IndustrialCopilotDashboard() {
               <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                  <Gauge size={64} className="text-emerald-500" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Gauge size={16} className="text-emerald-400"/> Pressure</h3>
-              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.pressure.toFixed(1)} <span className="text-lg text-slate-500">bar</span></p>
+              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Gauge size={16} className="text-emerald-400"/> Motor Current</h3>
+              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.current.toFixed(2)} <span className="text-lg text-slate-500">A</span></p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-amber-500/50 transition-colors">
@@ -241,7 +256,7 @@ export default function IndustrialCopilotDashboard() {
                       itemStyle={{ color: '#e2e8f0' }}
                     />
                     <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} name="Temp (°C)" />
-                    <Line type="monotone" dataKey="pressure" stroke="#10b981" strokeWidth={3} dot={false} name="Pressure (bar)" />
+                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} dot={false} name="Current (A)" />
                     <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} name="Vibration (mm/s)" />
                   </LineChart>
                 </ResponsiveContainer>

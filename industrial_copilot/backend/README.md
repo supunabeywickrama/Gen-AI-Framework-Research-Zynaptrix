@@ -27,7 +27,7 @@ Ensure your backend environment is active (using `.venv`) and follow these steps
 The FastAPI backend handles anomaly detection, telemetry streaming, and RAG orchestration.
 ```bash
 # From the industrial_copilot/backend folder
-.venv\Scripts\python -m uvicorn api.main_api:app --host 0.0.0.0 --port 8500 --reload
+.venv\Scripts\python -m uvicorn api.main_api:app
 ```
 *Access API Docs at: http://localhost:8500/docs*
 
