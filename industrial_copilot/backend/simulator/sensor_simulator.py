@@ -16,6 +16,7 @@ import sys
 import time
 import random
 import logging
+import requests
 from datetime import datetime, timezone
 
 # Allow running from any working directory
@@ -98,20 +99,20 @@ def simulate(interval_seconds: float = 1.0):
             else:
                 reading = idle_reading()
 
-            # Write to InfluxDB with HTTP fallback
+            # Write to InfluxDB with absolute safety
             try:
-                # Try Influx
                 writer.write_sensor_reading(reading, state=state)
             except Exception as e:
-                pass
+                logger.warning(f"  ⚠️ InfluxDB Write Failed (Continuing): {e}")
             
             # Broadcast to UI WebSockets
-            import requests
-            api_url = os.getenv("API_URL", "http://127.0.0.1:8500")
+            api_url = os.getenv("API_URL", "http://127.0.0.1:8000")
             try:
-                requests.post(f"{api_url}/api/telemetry/push", json=reading, timeout=2)
+                resp = requests.post(f"{api_url}/api/telemetry/push", json=reading, timeout=2)
+                if resp.status_code != 200:
+                    logger.warning(f"  ⚠️ Telemetry push failed (Status {resp.status_code})")
             except Exception as ex:
-                pass
+                logger.error(f"  ❌ Telemetry push failed: {ex}")
 
             logger.info(
                 f"  [{state:15s}] temp={reading['temperature']:.2f}°C  "

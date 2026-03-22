@@ -7,6 +7,10 @@ from typing import Dict, Any, List, Optional
 import asyncio
 import json
 import os
+from dotenv import load_dotenv
+
+# Load environment variables early
+load_dotenv()
 
 from agents.copilot_graph import build_copilot_graph
 from unified_rag.api.endpoints import router as rag_router
