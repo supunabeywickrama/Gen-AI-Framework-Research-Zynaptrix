@@ -28,8 +28,13 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Generative AI Multi-Agent Industrial Copilot")
 
 # Ensure the local `data` directory exists for static mounting
-os.makedirs("data/extracted", exist_ok=True)
-app.mount("/static", StaticFiles(directory="data"), name="static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(os.path.dirname(BASE_DIR), "data")
+os.makedirs(os.path.join(DATA_DIR, "extracted"), exist_ok=True)
+
+# Mount with Absolute Path for stability across different execution contexts
+app.mount("/static", StaticFiles(directory=DATA_DIR), name="static")
+logging.info(f"✅ Static assets mounted from: {DATA_DIR}")
 
 app.include_router(rag_router, tags=["Knowledge Base"])
 

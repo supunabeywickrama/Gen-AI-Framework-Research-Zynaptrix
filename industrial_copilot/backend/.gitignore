@@ -6,3 +6,5 @@ venv
 Lib
 data/extracted
 data/uploads
+generate_manual.py
+ingest_test.py
