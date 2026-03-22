@@ -7,6 +7,10 @@ from typing import Dict, Any, List, Optional
 import asyncio
 import json
 import os
+from dotenv import load_dotenv
+
+# Load environment variables early
+load_dotenv()
 
 from agents.copilot_graph import build_copilot_graph
 from unified_rag.api.endpoints import router as rag_router
@@ -28,19 +32,24 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Generative AI Multi-Agent Industrial Copilot")
 
 # Ensure the local `data` directory exists for static mounting
-os.makedirs("data/extracted", exist_ok=True)
-app.mount("/static", StaticFiles(directory="data"), name="static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(os.path.dirname(BASE_DIR), "data")
+os.makedirs(os.path.join(DATA_DIR, "extracted"), exist_ok=True)
+
+# Mount with Absolute Path for stability across different execution contexts
+app.mount("/static", StaticFiles(directory=DATA_DIR), name="static")
+logging.info(f"✅ Static assets mounted from: {DATA_DIR}")
 
 app.include_router(rag_router, tags=["Knowledge Base"])
 
 # Ensure Next.js Frontend can securely communicate with Backend
 import os
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+frontend_url = os.getenv("FRONTEND_URL", "http://127.0.0.1:3000")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_url],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

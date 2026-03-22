@@ -3,7 +3,7 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 interface TelemetryPoint {
   time: string;
   temperature: number;
-  pressure: number;
+  current: number;
   vibration: number;
 }
 
@@ -22,7 +22,7 @@ interface CopilotState {
 }
 
 const initialState: CopilotState = {
-  telemetry: [{ time: '10:00', temperature: 80, pressure: 40, vibration: 5 }],
+  telemetry: [{ time: '10:00', temperature: 80, current: 40, vibration: 5 }],
   chatHistory: [
     { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring real-time sensor streams via InfluxDB.' }
   ],

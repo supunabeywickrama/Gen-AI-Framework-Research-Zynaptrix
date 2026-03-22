@@ -32,7 +32,8 @@ export default function IndustrialCopilotDashboard() {
     let reconnectTimer: NodeJS.Timeout;
 
     const connectWS = () => {
-      const wsUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500').replace('http', 'ws');
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const wsUrl = base.replace('http', 'ws');
       ws = new WebSocket(`${wsUrl}/ws/telemetry`);
       
       ws.onmessage = (event) => {
@@ -44,7 +45,7 @@ export default function IndustrialCopilotDashboard() {
             dispatch(addTelemetry({
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               temperature: data.temperature,
-              pressure: data.pressure,
+              current: data.motor_current,
               vibration: data.vibration
             }));
           } else if (parsed.type === "anomaly_alert") {
@@ -52,7 +53,9 @@ export default function IndustrialCopilotDashboard() {
             dispatch(setSystemState('ANOMALY'));
             dispatch(setAnomalyScore(result.anomaly_score || 0.99));
             
-            const alertMessage = `🚨 **CRITICAL ANOMALY EVENT TRIGGERED**\n\n**Suspected System**: ${result.suspect_sensor}\n\n**AI Diagnostic Procedure:**\n${result.strategy || result.final_execution_plan}\n\n**RAG Knowledge Base Context:**\n${result.rag_advice || "No context found."}`;
+            // USE THE CLEAN FINAL PLAN DIRECTLY - NO REDUNDANT WRAPPERS
+            const alertMessage = result.final_execution_plan || "Critical Anomaly Detected. Initializing Diagnostic Sequence...";
+            
             dispatch(addChatMessage({ 
               role: 'agent', 
               content: alertMessage,
@@ -89,7 +92,7 @@ export default function IndustrialCopilotDashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
-  const latestReading = telemetry[telemetry.length - 1] || { temperature: 0, pressure: 0, vibration: 0 };
+  const latestReading = telemetry[telemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
 
   const handleManualInquiry = async () => {
     if (!query) return;
@@ -100,7 +103,7 @@ export default function IndustrialCopilotDashboard() {
     dispatch(addChatMessage({ role: 'agent', content: 'Analyzing factory status deeply using Multi-Agent LangGraph...' }));
     
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const res = await fetch(`${apiUrl}/api/copilot/invoke`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,7 +135,7 @@ export default function IndustrialCopilotDashboard() {
     formData.append("file", uploadFile);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const res = await fetch(`${apiUrl}/ingest-manual`, {
          method: 'POST',
          body: formData
@@ -154,11 +157,25 @@ export default function IndustrialCopilotDashboard() {
 
   const toggleSimulation = async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8500';
+      // Robust dynamic host detection for local network testing
+      let base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      if (typeof window !== 'undefined' && base.includes('127.0.0.1') || base.includes('localhost')) {
+          const currentHost = window.location.hostname;
+          if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
+              base = `http://${currentHost}:8000`;
+          }
+      }
+      
+      const apiUrl = base.endsWith('/') ? base.slice(0, -1) : base;
       const endpoint = isSimulating ? '/api/simulator/stop' : '/api/simulator/start';
+      
+      console.log(`📡 Sending simulation toggle to: ${apiUrl}${endpoint}`);
       const res = await fetch(`${apiUrl}${endpoint}`, { method: 'POST' });
       if (res.ok) {
         setIsSimulating(!isSimulating);
+      } else {
+        const err = await res.json();
+        console.error("Simulation failed:", err);
       }
     } catch (e) {
       console.error("Failed to toggle simulation", e);
@@ -202,8 +219,8 @@ export default function IndustrialCopilotDashboard() {
               <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                  <Gauge size={64} className="text-emerald-500" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Gauge size={16} className="text-emerald-400"/> Pressure</h3>
-              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.pressure.toFixed(1)} <span className="text-lg text-slate-500">bar</span></p>
+              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Gauge size={16} className="text-emerald-400"/> Motor Current</h3>
+              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.current.toFixed(2)} <span className="text-lg text-slate-500">A</span></p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-amber-500/50 transition-colors">
@@ -241,7 +258,7 @@ export default function IndustrialCopilotDashboard() {
                       itemStyle={{ color: '#e2e8f0' }}
                     />
                     <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} name="Temp (°C)" />
-                    <Line type="monotone" dataKey="pressure" stroke="#10b981" strokeWidth={3} dot={false} name="Pressure (bar)" />
+                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} dot={false} name="Current (A)" />
                     <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} name="Vibration (mm/s)" />
                   </LineChart>
                 </ResponsiveContainer>
@@ -326,20 +343,73 @@ export default function IndustrialCopilotDashboard() {
                 <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${
                   msg.role === 'user' 
                     ? 'bg-blue-600 text-white rounded-br-none' 
-                    : 'bg-slate-800 text-slate-200 border border-slate-700/50 rounded-bl-none leading-relaxed'                }`}>
-                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    : 'bg-slate-800 text-slate-200 border border-slate-700/50 rounded-bl-none leading-relaxed'}`}>
                   
-                  {msg.images && msg.images.length > 0 && (
-                    <div className="mt-4 grid grid-cols-1 gap-3">
+                  {/* Human-readable interleaved content parser */}
+                  <div className="text-sm space-y-4">
+                    {msg.content.split(/(\[IMAGE[_\s-]?\d+\])/gi).map((part, partIdx) => {
+                      const imageMatch = part.match(/\[IMAGE[_\s-]?(\d+)\]/i);
+                      if (imageMatch && msg.images && msg.images[parseInt(imageMatch[1])]) {
+                        const imgIdx = parseInt(imageMatch[1]);
+                        return (
+                          <div key={partIdx} className="my-4 rounded-xl overflow-hidden border border-slate-700 bg-slate-900/50 shadow-inner group">
+                            <div className="bg-slate-800/80 px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-700 flex justify-between items-center text-xs">
+                              <span>Technical Figure {imgIdx + 1}</span>
+                              <span className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">Visual Evidence</span>
+                            </div>
+                            <img 
+                              src={msg.images[imgIdx]} 
+                              alt={`Diagnostic Figure ${imgIdx + 1}`}
+                              className="w-full h-auto max-h-[400px] object-contain cursor-zoom-in hover:scale-[1.01] transition-transform duration-300"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={partIdx} className="space-y-2">
+                          {part.split('\n').map((line, lineIdx) => {
+                            // Header 3 (###)
+                            if (line.trim().startsWith('###')) {
+                              return <h3 key={lineIdx} className="text-lg font-bold text-blue-400 mt-4 border-b border-slate-700/50 pb-1">{line.replace('###', '').trim()}</h3>;
+                            }
+                            // Header 2 (##)
+                            if (line.trim().startsWith('##')) {
+                              return <h2 key={lineIdx} className="text-xl font-black text-slate-100 mt-6 flex items-center gap-2">
+                                <Activity size={18} className="text-indigo-500" /> {line.replace('##', '').trim()}
+                              </h2>;
+                            }
+                            // Bold text (**)
+                            if (line.includes('**')) {
+                              const segments = line.split(/(\*\*.*?\*\*)/g);
+                              return (
+                                <p key={lineIdx} className="whitespace-pre-wrap">
+                                  {segments.map((seg, segIdx) => {
+                                    if (seg.startsWith('**') && seg.endsWith('**')) {
+                                      return <strong key={segIdx} className="text-blue-300 font-bold">{seg.slice(2, -2)}</strong>;
+                                    }
+                                    return seg;
+                                  })}
+                                </p>
+                              );
+                            }
+                            return <p key={lineIdx} className="whitespace-pre-wrap">{line}</p>;
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Fallback for images not tagged in text */}
+                  {msg.images && msg.images.length > 0 && !msg.content.match(/\[IMAGE[_\s-]?\d+\]/i) && (
+                    <div className="mt-6 pt-4 border-t border-slate-700/50 grid grid-cols-1 gap-4">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supplemental Records</p>
                       {msg.images.map((imgUrl, imgIdx) => (
-                        <div key={imgIdx} className="rounded-lg overflow-hidden border border-slate-700 bg-slate-900/50">
+                        <div key={imgIdx} className="rounded-xl overflow-hidden border border-slate-700 bg-slate-900/50">
                           <img 
                             src={imgUrl} 
                             alt={`Retrieved Diagram ${imgIdx + 1}`}
-                            className="w-full h-auto max-h-64 object-contain cursor-zoom-in hover:scale-[1.02] transition-transform"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
+                            className="w-full h-auto max-h-64 object-contain"
                           />
                         </div>
                       ))}

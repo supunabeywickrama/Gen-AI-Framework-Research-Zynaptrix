@@ -40,12 +40,22 @@ class RAGGenerator:
                 
             # 3. RAG Response Generation using LLM
             # We use gpt-4o for complex reasoning over technical context
+            
+            # Prepare image inventory for the LLM
+            image_list_str = "\n".join([f"- [IMAGE_{i}]: {img.content} (Type: {img.type})" for i, img in enumerate(retrieved_data["images"])])
+            
             system_prompt = (
-                "You are an Industrial AI Troubleshooting Copilot. "
-                "Use the provided context extracted from industrial manuals to answer the user's query.\n"
-                "Provide step-by-step diagnostic or repair strategies if asked.\n"
-                "If the context does not contain the answer, state that you do not know.\n\n"
-                f"# CONTEXT:\n{text_context}"
+                "You are a Senior Industrial Systems Engineer specializing in the Zynaptrix-9000 Turbo Pump.\n"
+                "Your objective is to generate a comprehensive, human-readable repair procedure based ONLY on the provided manual context.\n\n"
+                "### CRITICAL FORMATTING RULES:\n"
+                "1. **NO INTRO/OUTRO**: Do not start with 'Based on the context' or 'RAG Extract' or 'Here is the procedure'. Start directly with the first heading.\n"
+                "2. Use markdown headers (##, ###) for sections.\n"
+                "3. **INTERLEAVE IMAGES (MANDATORY)**: You MUST include the technical diagrams listed below to assist the operator. "
+                "Insert the tag [IMAGE_N] at the EXACT point in your instructions where that visual aid is most relevant. "
+                "Example: 'Locate the primary discharge port as shown in [IMAGE_2].'\n"
+                "4. Ensure every retrieved image is referenced at least once if it is relevant to the anomaly.\n\n"
+                f"### AVAILABLE TECHNICAL DIAGRAMS:\n{image_list_str}\n\n"
+                f"### OFFICIAL MANUAL CONTEXT:\n{text_context}"
             )
             
             try:
@@ -53,10 +63,10 @@ class RAGGenerator:
                     model="gpt-4o",
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": query}
+                        {"role": "user", "content": f"Query: {query}\n\nPlease generate a full maintenance procedure."}
                     ],
-                    max_tokens=700,
-                    temperature=0.2 # Lower temperature for factual accuracy
+                    max_tokens=1500,
+                    temperature=0.2
                 )
                 answer = response.choices[0].message.content
             except Exception as e:
