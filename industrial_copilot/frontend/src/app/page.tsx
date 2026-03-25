@@ -4,14 +4,25 @@ import { Activity, AlertTriangle, ShieldCheck, Server, MessageSquare, Send, Ther
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
-import { addChatMessage, addTelemetry, setSystemState, setAnomalyScore } from '../store/slices/copilotSlice';
+import { addChatMessage, addTelemetry, setSystemState, setAnomalyScore, setCurrentMachineId } from '../store/slices/copilotSlice';
 
 export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
-  const { telemetry, chatHistory, systemState, anomalyScore, activeAgents } = useSelector((state: RootState) => state.copilot);
+  const { telemetry, chatHistory, systemState, anomalyScore, activeAgents, currentMachineId } = useSelector((state: RootState) => state.copilot);
   
   const [query, setQuery] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Filter telemetry points for the current machine
+  const filteredTelemetry = telemetry.filter(t => t.machineId === currentMachineId);
+  const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
+  
+  // Available machines for the factory
+  const machines = [
+    { id: 'PUMP-001', name: 'Zynaptrix Pump' },
+    { id: 'LATHE-002', name: 'Precision Lathe' },
+    { id: 'TURBINE-003', name: 'Gas Turbine' }
+  ];
 
   // Upload States
   const [manualId, setManualId] = useState('');
@@ -19,7 +30,8 @@ export default function IndustrialCopilotDashboard() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulatingMachines, setSimulatingMachines] = useState<string[]>([]);
+  const isSimulating = simulatingMachines.includes(currentMachineId);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -28,6 +40,21 @@ export default function IndustrialCopilotDashboard() {
 
   // WebSocket Telemetry Stream
   useEffect(() => {
+    // Initial status check
+    const checkStatus = async () => {
+      try {
+        const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const res = await fetch(`${base}/api/simulator/status`);
+        if (res.ok) {
+          const data = await res.json();
+          setSimulatingMachines(data.active_simulators || []);
+        }
+      } catch (e) {
+        console.error("Failed to fetch simulator status", e);
+      }
+    };
+    checkStatus();
+
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;
 
@@ -43,6 +70,7 @@ export default function IndustrialCopilotDashboard() {
           if (parsed.type === "telemetry") {
             const data = parsed.data;
             dispatch(addTelemetry({
+              machineId: data.machine_id || 'PUMP-001',
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               temperature: data.temperature,
               current: data.motor_current,
@@ -50,6 +78,7 @@ export default function IndustrialCopilotDashboard() {
             }));
           } else if (parsed.type === "anomaly_alert") {
             const result = parsed.data;
+            // Only alert if it's the current machine or if we want global alerts
             dispatch(setSystemState('ANOMALY'));
             dispatch(setAnomalyScore(result.anomaly_score || 0.99));
             
@@ -59,7 +88,8 @@ export default function IndustrialCopilotDashboard() {
             dispatch(addChatMessage({ 
               role: 'agent', 
               content: alertMessage,
-              images: result.retrieved_images || []
+              images: result.retrieved_images || [],
+              machineId: result.machine_id
             }));
           }
         } catch (err) {
@@ -92,7 +122,6 @@ export default function IndustrialCopilotDashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
-  const latestReading = telemetry[telemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
 
   const handleManualInquiry = async () => {
     if (!query) return;
@@ -108,6 +137,7 @@ export default function IndustrialCopilotDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          machine_id: currentMachineId,
           machine_state: systemState === "NORMAL" ? "manual_inquiry_normal" : "anomaly_investigation",
           anomaly_score: anomalyScore,
           suspect_sensor: "User Query",
@@ -157,22 +187,22 @@ export default function IndustrialCopilotDashboard() {
 
   const toggleSimulation = async () => {
     try {
-      // Robust dynamic host detection for local network testing
       let base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      if (typeof window !== 'undefined' && base.includes('127.0.0.1') || base.includes('localhost')) {
-          const currentHost = window.location.hostname;
-          if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
-              base = `http://${currentHost}:8000`;
-          }
-      }
-      
       const apiUrl = base.endsWith('/') ? base.slice(0, -1) : base;
       const endpoint = isSimulating ? '/api/simulator/stop' : '/api/simulator/start';
       
-      console.log(`📡 Sending simulation toggle to: ${apiUrl}${endpoint}`);
-      const res = await fetch(`${apiUrl}${endpoint}`, { method: 'POST' });
+      console.log(`📡 Sending simulation toggle for ${currentMachineId} to: ${apiUrl}${endpoint}`);
+      const res = await fetch(`${apiUrl}${endpoint}?machine_id=${currentMachineId}`, { 
+        method: 'POST' 
+      });
+      
       if (res.ok) {
-        setIsSimulating(!isSimulating);
+        // Refresh status
+        const statusRes = await fetch(`${apiUrl}/api/simulator/status`);
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          setSimulatingMachines(statusData.active_simulators || []);
+        }
       } else {
         const err = await res.json();
         console.error("Simulation failed:", err);
@@ -192,11 +222,24 @@ export default function IndustrialCopilotDashboard() {
           </h1>
           <p className="text-slate-400 text-sm mt-1 font-medium tracking-wide">Generative AI Multi-Agent Orchestration Engine</p>
         </div>
-        <div className={`px-5 py-2 rounded-full border shadow-lg flex items-center gap-2 font-bold tracking-widest ${
-          systemState === 'NORMAL' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'
-        }`}>
-          {systemState === 'NORMAL' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
-          {systemState}
+        <div className="flex items-center gap-6">
+          <div className="flex bg-slate-800/50 rounded-xl p-1 border border-slate-700/50">
+            {machines.map(m => (
+              <button
+                key={m.id}
+                onClick={() => dispatch(setCurrentMachineId(m.id))}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${currentMachineId === m.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+          <div className={`px-5 py-2 rounded-full border shadow-lg flex items-center gap-2 font-bold tracking-widest ${
+            systemState === 'NORMAL' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'
+          }`}>
+            {systemState === 'NORMAL' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
+            {systemState}
+          </div>
         </div>
       </header>
 
@@ -249,7 +292,7 @@ export default function IndustrialCopilotDashboard() {
             <div className="h-[300px] w-full relative">
               {isMounted && (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={telemetry} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <LineChart data={filteredTelemetry} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                     <XAxis dataKey="time" stroke="#475569" tick={{fill: '#94a3b8'}} />
                     <YAxis stroke="#475569" tick={{fill: '#94a3b8'}} />

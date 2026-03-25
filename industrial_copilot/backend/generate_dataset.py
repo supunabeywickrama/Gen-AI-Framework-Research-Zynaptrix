@@ -32,12 +32,9 @@ from simulator.anomaly_injector import (
 )
 
 
-def generate_dataset(total_rows: int = 20_000, seed: int = 42) -> pd.DataFrame:
+def generate_dataset(machine_id: str = "PUMP-001", total_rows: int = 20_000, seed: int = 42) -> pd.DataFrame:
     """
     Generate a realistic sensor dataset using block-based state injection.
-
-    Instead of row-by-row random state (which looks unrealistic), states are
-    injected in contiguous blocks — mimicking how real faults occur as events.
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -55,12 +52,12 @@ def generate_dataset(total_rows: int = 20_000, seed: int = 42) -> pd.DataFrame:
 
     # ── Generate readings block by block ───────────────────────────────────
     rows = []
-    drift_step = 0.0
-    frozen_snapshot = None
     start_time = datetime(2026, 1, 1, 6, 0, 0)   # factory shift start
 
     tick = 0
     drift_step: float = 0.0
+    frozen_snapshot = None
+
     for state, block_size in state_blocks:
         drift_step = 0.0          # reset drift each new drift block
         frozen_snapshot = None    # reset freeze snapshot
@@ -69,25 +66,22 @@ def generate_dataset(total_rows: int = 20_000, seed: int = 42) -> pd.DataFrame:
             timestamp = start_time + timedelta(seconds=tick)
 
             if state == "normal":
-                reading = normal_reading()
-
+                reading = normal_reading(machine_id)
             elif state == "machine_fault":
-                reading = machine_fault_reading()
-
+                reading = machine_fault_reading(machine_id)
             elif state == "sensor_freeze":
                 if frozen_snapshot is None:
-                    frozen_snapshot = normal_reading()
+                    frozen_snapshot = normal_reading(machine_id)
                 reading = sensor_freeze_reading(frozen_snapshot)
-
             elif state == "sensor_drift":
                 drift_step = drift_step + float(random.uniform(0.05, 0.3))
-                reading = sensor_drift_reading(drift_step)
-
+                reading = sensor_drift_reading(drift_step, machine_id)
             else:  # idle
                 reading = idle_reading()
 
             row = {
                 "timestamp":     timestamp.isoformat(),
+                "machine_id":    machine_id,
                 "temperature":   round(reading["temperature"], 3),
                 "motor_current": round(reading["motor_current"], 3),
                 "vibration":     round(reading["vibration"], 4),
@@ -108,10 +102,10 @@ def generate_dataset(total_rows: int = 20_000, seed: int = 42) -> pd.DataFrame:
     return df
 
 
-def validate_dataset(df: pd.DataFrame) -> None:
+def validate_dataset(df: pd.DataFrame, machine_id: str) -> None:
     """Print a quick statistical summary of the generated dataset."""
     print("\n" + "═" * 55)
-    print("  Dataset Summary")
+    print(f"  Dataset Summary: {machine_id}")
     print("═" * 55)
     print(f"  Total rows   : {len(df):,}")
     print(f"  Columns      : {list(df.columns)}")
@@ -133,10 +127,21 @@ def validate_dataset(df: pd.DataFrame) -> None:
 
 
 if __name__ == "__main__":
-    print("Generating mock sensor dataset …")
-    df = generate_dataset(total_rows=20_000)
-    validate_dataset(df)
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate mock sensor dataset")
+    parser.add_argument("--machine_id", default="PUMP-001", help="Machine ID for config")
+    parser.add_argument("--rows", type=int, default=20000, help="Total rows")
+    parser.add_argument("--output", help="Custom output path")
+    args = parser.parse_args()
 
-    os.makedirs(os.path.dirname(MOCK_DATA_PATH), exist_ok=True)
-    df.to_csv(MOCK_DATA_PATH, index=False)
-    print(f"✓ Dataset saved → {MOCK_DATA_PATH}")
+    print(f"Generating mock dataset for {args.machine_id} …")
+    df = generate_dataset(machine_id=args.machine_id, total_rows=args.rows)
+    validate_dataset(df, args.machine_id)
+
+    out_path = args.output
+    if not out_path:
+        out_path = MOCK_DATA_PATH.replace(".csv", f"_{args.machine_id}.csv")
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    df.to_csv(out_path, index=False)
+    print(f"✓ Dataset saved → {out_path}")

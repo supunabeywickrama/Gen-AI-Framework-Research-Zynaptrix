@@ -39,7 +39,7 @@ from models.lstm_autoencoder import (
     get_callbacks as lstm_callbacks,
     reconstruction_error as lstm_error,
 )
-from preprocessing.normalization import SCALER_PATH
+from preprocessing.normalization import get_scaler_path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -54,11 +54,24 @@ TIMESTEPS      = 30   # window length for LSTM
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def load_normal_data() -> np.ndarray:
-    """Load normalized dataset and return only normal-state rows as numpy array."""
-    df = pd.read_csv(PROCESSED_DATA_PATH)
+def get_model_paths(machine_id: str = "PUMP-001"):
+    return {
+        "dense": os.path.join(MODEL_DIR, f"autoencoder_{machine_id}.keras"),
+        "lstm":  os.path.join(MODEL_DIR, f"lstm_autoencoder_{machine_id}.keras"),
+        "data":  PROCESSED_DATA_PATH.replace(".csv", f"_{machine_id}.csv")
+    }
+
+def load_normal_data(machine_id: str = "PUMP-001") -> np.ndarray:
+    """Load normalized dataset and return only normal-state rows."""
+    paths = get_model_paths(machine_id)
+    if not os.path.exists(paths["data"]):
+        log.warning(f"No processed data for {machine_id}, falling back to default.")
+        df = pd.read_csv(PROCESSED_DATA_PATH)
+    else:
+        df = pd.read_csv(paths["data"])
+        
     normal_df = df[df["state"] == "normal"][SENSOR_COLUMNS]
-    log.info(f"Normal rows for training: {len(normal_df):,}")
+    log.info(f"[{machine_id}] Normal rows for training: {len(normal_df):,}")
     return normal_df.values.astype(np.float32)
 
 
@@ -69,15 +82,17 @@ def compute_threshold(errors: np.ndarray, n_sigma: float = 2.0) -> float:
     return threshold
 
 
-def save_threshold(key: str, value: float) -> None:
+def save_threshold(machine_id: str, key: str, value: float) -> None:
     thresholds = {}
     if os.path.exists(THRESHOLD_FILE):
         with open(THRESHOLD_FILE) as f:
             thresholds = json.load(f)
-    thresholds[key] = value
+    
+    # Store with machine prefix
+    thresholds[f"{machine_id}_{key}"] = value
     with open(THRESHOLD_FILE, "w") as f:
         json.dump(thresholds, f, indent=2)
-    log.info(f"Threshold saved → {THRESHOLD_FILE}")
+    log.info(f"Threshold for {machine_id}_{key} saved → {THRESHOLD_FILE}")
 
 
 def plot_loss(history, title: str, out_path: str) -> None:
@@ -114,12 +129,12 @@ def plot_error_distribution(errors: np.ndarray, threshold: float,
 
 # ── Training routines ─────────────────────────────────────────────────────────
 
-def train_dense():
+def train_dense(machine_id: str = "PUMP-001"):
     log.info("═" * 50)
-    log.info("Training Dense Autoencoder")
+    log.info(f"Training Dense Autoencoder for {machine_id}")
     log.info("═" * 50)
 
-    X = load_normal_data()
+    X = load_normal_data(machine_id)
     split = int(len(X) * 0.85)
     X_train, X_val = X[:split], X[split:]
     log.info(f"Train: {len(X_train):,}   Val: {len(X_val):,}")
@@ -138,13 +153,14 @@ def train_dense():
 
     # Save model
     os.makedirs(MODEL_DIR, exist_ok=True)
-    model.save(DENSE_MODEL)
-    log.info(f"Model saved → {DENSE_MODEL}")
+    paths = get_model_paths(machine_id)
+    model.save(paths["dense"])
+    log.info(f"Model saved → {paths['dense']}")
 
     # Compute and save threshold
     errors = dense_error(model, X_train)
     threshold = compute_threshold(errors)
-    save_threshold("dense", threshold)
+    save_threshold(machine_id, "dense", threshold)
 
     # Charts
     plot_loss(history, "Dense Autoencoder — Training Loss",
@@ -157,12 +173,12 @@ def train_dense():
     return model, threshold
 
 
-def train_lstm():
+def train_lstm(machine_id: str = "PUMP-001"):
     log.info("═" * 50)
-    log.info("Training LSTM Autoencoder")
+    log.info(f"Training LSTM Autoencoder for {machine_id}")
     log.info("═" * 50)
 
-    X = load_normal_data()
+    X = load_normal_data(machine_id)
     X_seq = create_sequences(X, timesteps=TIMESTEPS)
     log.info(f"Sequences shape: {X_seq.shape}")
 
@@ -182,12 +198,13 @@ def train_lstm():
     )
 
     os.makedirs(MODEL_DIR, exist_ok=True)
-    model.save(LSTM_MODEL)
-    log.info(f"Model saved → {LSTM_MODEL}")
+    paths = get_model_paths(machine_id)
+    model.save(paths["lstm"])
+    log.info(f"Model saved → {paths['lstm']}")
 
     errors = lstm_error(model, X_train)
     threshold = compute_threshold(errors)
-    save_threshold("lstm", threshold)
+    save_threshold(machine_id, "lstm", threshold)
 
     plot_loss(history, "LSTM Autoencoder — Training Loss",
               os.path.join(MODEL_DIR, "lstm_loss_curve.png"))
@@ -202,12 +219,12 @@ def train_lstm():
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train anomaly detection autoencoder")
-    parser.add_argument("--model", choices=["dense", "lstm", "both"],
-                        default="dense", help="Which model to train")
+    parser = argparse.ArgumentParser(description="Multi-machine Model Training")
+    parser.add_argument("--model", choices=["dense", "lstm"], default="dense")
+    parser.add_argument("--machine_id", default="PUMP-001", help="Machine to train for")
     args = parser.parse_args()
 
-    if args.model in ("dense", "both"):
-        train_dense()
-    if args.model in ("lstm", "both"):
-        train_lstm()
+    if args.model == "dense":
+        train_dense(args.machine_id)
+    else:
+        train_lstm(args.machine_id)

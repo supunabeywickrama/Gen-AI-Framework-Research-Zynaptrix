@@ -60,12 +60,12 @@ def pick_state(current_state: str, drift_counter: list) -> str:
         return "idle"
 
 
-def simulate(interval_seconds: float = 1.0):
+def simulate(machine_id: str = "PUMP-001", interval_seconds: float = 1.0):
     """Main simulation loop — streams sensor data every interval_seconds."""
     from ingestion.influx_writer import InfluxWriter
     writer = InfluxWriter()
 
-    logger.info("▶ Sensor simulator started. Press Ctrl+C to stop.")
+    logger.info(f"▶ Sensor simulator started for {machine_id}. Press Ctrl+C to stop.")
 
     state = "normal"
     drift_step = 0.0
@@ -82,40 +82,43 @@ def simulate(interval_seconds: float = 1.0):
                 state_counter = 0
                 drift_step = 0.0
                 frozen_snapshot = None
-                logger.info(f"  → State changed to: {state} (duration: {state_duration}s)")
+                logger.info(f"  [{machine_id}] → State changed to: {state} (duration: {state_duration}s)")
 
             # Generate reading
             if state == "normal":
-                reading = normal_reading()
+                reading = normal_reading(machine_id=machine_id)
             elif state == "machine_fault":
-                reading = machine_fault_reading()
+                reading = machine_fault_reading(machine_id=machine_id)
             elif state == "sensor_freeze":
                 if frozen_snapshot is None:
-                    frozen_snapshot = normal_reading()   # freeze at a normal snapshot
+                    frozen_snapshot = normal_reading(machine_id=machine_id)   # freeze at a normal snapshot
                 reading = sensor_freeze_reading(frozen_snapshot)
             elif state == "sensor_drift":
                 drift_step += random.uniform(0.1, 0.5)
-                reading = sensor_drift_reading(drift_step)
+                reading = sensor_drift_reading(drift_step, machine_id=machine_id)
             else:
                 reading = idle_reading()
+
+            # Add machine context
+            reading["machine_id"] = machine_id
 
             # Write to InfluxDB with absolute safety
             try:
                 writer.write_sensor_reading(reading, state=state)
             except Exception as e:
-                logger.warning(f"  ⚠️ InfluxDB Write Failed (Continuing): {e}")
+                logger.warning(f"  [{machine_id}] ⚠️ InfluxDB Write Failed (Continuing): {e}")
             
             # Broadcast to UI WebSockets
             api_url = os.getenv("API_URL", "http://127.0.0.1:8000")
             try:
                 resp = requests.post(f"{api_url}/api/telemetry/push", json=reading, timeout=2)
                 if resp.status_code != 200:
-                    logger.warning(f"  ⚠️ Telemetry push failed (Status {resp.status_code})")
+                    logger.warning(f"  [{machine_id}] ⚠️ Telemetry push failed (Status {resp.status_code})")
             except Exception as ex:
-                logger.error(f"  ❌ Telemetry push failed: {ex}")
+                logger.error(f"  [{machine_id}] ❌ Telemetry push failed: {ex}")
 
             logger.info(
-                f"  [{state:15s}] temp={reading['temperature']:.2f}°C  "
+                f"  [{machine_id:10s}] [{state:15s}] temp={reading['temperature']:.2f}°C  "
                 f"current={reading['motor_current']:.2f}A  "
                 f"vib={reading['vibration']:.3f} mm/s"
             )
@@ -124,8 +127,15 @@ def simulate(interval_seconds: float = 1.0):
             time.sleep(interval_seconds)
 
     except KeyboardInterrupt:
-        logger.info("■ Simulator stopped.")
+        logger.info(f"■ Simulator stopped for {machine_id}.")
+    finally:
+        writer.close()
 
 
 if __name__ == "__main__":
-    simulate()
+    import argparse
+    parser = argparse.ArgumentParser(description="Industrial Sensor Simulator")
+    parser.add_argument("--machine_id", type=str, default="PUMP-001", help="ID of the machine being simulated")
+    args = parser.parse_args()
+    
+    simulate(machine_id=args.machine_id)

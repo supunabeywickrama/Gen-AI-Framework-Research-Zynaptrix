@@ -1,13 +1,21 @@
 import fitz  # PyMuPDF
 import os
-import easyocr
-import camelot
 from PIL import Image
 
 try:
     from ultralytics import YOLO
 except ImportError:
-    pass
+    YOLO = None
+
+try:
+    import easyocr
+except ImportError:
+    easyocr = None
+
+try:
+    import camelot
+except ImportError:
+    camelot = None
 
 class DocumentParser:
     def __init__(self, upload_dir="data/uploads", output_dir="data/extracted", yolo_weights="models/yolov8_doclaynet.pt"):
@@ -17,20 +25,30 @@ class DocumentParser:
         os.makedirs(output_dir, exist_ok=True)
         
         # Step 1: Initialize Layout Detection (YOLOv8 DocLayNet)
-        print("Initializing YOLOv8 DocLayNet Layout Detection...")
-        try:
-            self.layout_model = YOLO(yolo_weights)
-            print(f"Successfully loaded YOLOv8 weights from {yolo_weights}")
-        except Exception as e:
-            print(f"WARNING: Could not load YOLOv8 model from {yolo_weights}. Please download the weights! Error: {e}")
+        if YOLO:
+            print("Initializing YOLOv8 DocLayNet Layout Detection...")
+            try:
+                self.layout_model = YOLO(yolo_weights)
+                print(f"Successfully loaded YOLOv8 weights from {yolo_weights}")
+            except Exception as e:
+                print(f"WARNING: Could not load YOLOv8 model from {yolo_weights}. Error: {e}")
+                self.layout_model = None
+        else:
+            print("WARNING: ultralytics (YOLO) not installed. Skipping AI layout detection.")
             self.layout_model = None
 
         # Initialize EasyOCR Reader
-        print("Initializing EasyOCR...")
-        self.reader = easyocr.Reader(['en'], gpu=False) # Use gpu=True if CUDA is available
+        if easyocr:
+            print("Initializing EasyOCR...")
+            self.reader = easyocr.Reader(['en'], gpu=False)
+        else:
+            print("WARNING: easyocr not installed. Skipping OCR fallback.")
+            self.reader = None
         
     def extract_text_with_ocr(self, image_path):
         """Uses EasyOCR to extract text from a specific image/region."""
+        if not self.reader:
+            return ""
         results = self.reader.readtext(image_path)
         text = " ".join([res[1] for res in results])
         return text
@@ -111,21 +129,24 @@ class DocumentParser:
                         if text_content:
                             parsed_data.append({"type": "text", "content": text_content, "page": page_num + 1})
 
-        # Step 4: Extract Tables (Camelot)
-        try:
-            print(f"📊 [Parser] Extracting tables from {file_path} using Camelot (Lattice flavor)...")
-            tables = camelot.read_pdf(file_path, pages='all', flavor='lattice')
-            print(f"✅ [Parser] Camelot found {len(tables)} potential tables.")
-            for i, table in enumerate(tables):
-                df = table.df
-                table_str = df.to_csv(index=False) 
-                parsed_data.append({
-                    "type": "table",
-                    "content": table_str,
-                    "page": table.page
-                })
-                print(f"      [Table] Extracted table {i+1} from page {table.page}")
-        except Exception as e:
-            print(f"⚠️ [Parser] Camelot extraction issue: {e}")
+            # Step 4: Extract Tables (Camelot)
+            # 3. Tables Fallback (Camelot)
+            if camelot:
+                try:
+                    print(f"      📊 [Parser] Extracting tables from page {page_num + 1} using Camelot (Lattice flavor)...")
+                    tables = camelot.read_pdf(file_path, pages=str(page_num + 1), flavor='lattice')
+                    print(f"      ✅ [Parser] Camelot found {len(tables)} potential tables on page {page_num + 1}.")
+                    for i, table in enumerate(tables):
+                        parsed_data.append({
+                            "type": "table",
+                            "page": page_num + 1,
+                            "content": table.df.to_json(),
+                            "metadata": {"manual_id": manual_id, "table_index": i}
+                        })
+                        print(f"         [Table] Extracted table {i+1} from page {page_num + 1}")
+                except Exception as e:
+                    print(f"      ⚠️ [Parser] Camelot table extraction failed for page {page_num + 1}: {e}")
+            else:
+                print(f"      [Warning] Camelot not installed. Skipping table extraction for page {page_num+1}.")
             
         return parsed_data

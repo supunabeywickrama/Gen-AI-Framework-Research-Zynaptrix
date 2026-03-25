@@ -1,6 +1,7 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface TelemetryPoint {
+  machineId: string;
   time: string;
   temperature: number;
   current: number;
@@ -11,6 +12,7 @@ export interface ChatMessage {
   role: 'agent' | 'user';
   content: string;
   images?: string[];
+  machineId?: string;
 }
 
 interface CopilotState {
@@ -19,16 +21,18 @@ interface CopilotState {
   systemState: 'NORMAL' | 'ANOMALY';
   anomalyScore: number;
   activeAgents: string[];
+  currentMachineId: string;
 }
 
 const initialState: CopilotState = {
-  telemetry: [{ time: '10:00', temperature: 80, current: 40, vibration: 5 }],
+  telemetry: [],
   chatHistory: [
-    { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring real-time sensor streams via InfluxDB.' }
+    { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring multi-machine factory floor.' }
   ],
   systemState: 'NORMAL',
   anomalyScore: 0.001,
   activeAgents: ['Sensor', 'Diagnostic', 'Strategy', 'Critic', 'RAG'],
+  currentMachineId: 'PUMP-001'
 };
 
 const copilotSlice = createSlice({
@@ -55,6 +59,9 @@ const copilotSlice = createSlice({
     },
     setActiveAgents(state, action: PayloadAction<string[]>) {
       state.activeAgents = action.payload;
+    },
+    setCurrentMachineId(state, action: PayloadAction<string>) {
+      state.currentMachineId = action.payload;
     }
   },
 });
@@ -65,7 +72,8 @@ export const {
   updateChatMessage,
   setSystemState, 
   setAnomalyScore,
-  setActiveAgents 
+  setActiveAgents,
+  setCurrentMachineId
 } = copilotSlice.actions;
 
 export default copilotSlice.reducer;
