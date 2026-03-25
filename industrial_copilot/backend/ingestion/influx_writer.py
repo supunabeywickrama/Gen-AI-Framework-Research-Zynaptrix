@@ -23,16 +23,18 @@ class InfluxWriter:
         self.org = INFLUX_ORG
         self.measurement = INFLUX_MEASUREMENT
 
-    def write_sensor_reading(self, reading: Dict[str, float], state: str = "unknown"):
+    def write_sensor_reading(self, reading: Dict[str, any], state: str = "unknown"):
         """Writes a single sensor reading dict to InfluxDB."""
+        machine_id = reading.get("machine_id", "unknown_machine")
         point = (
             Point(self.measurement)
+            .tag("machine_id", machine_id)
+            .tag("state", state)
             .field("temperature",   round(reading["temperature"], 3))
             .field("motor_current", round(reading["motor_current"], 3))
             .field("vibration",     round(reading["vibration"], 3))
             .field("speed",         round(reading["speed"], 3))
             .field("pressure",      round(reading["pressure"], 3))
-            .tag("state", state)
         )
         self.write_api.write(bucket=self.bucket, org=self.org, record=point)
         

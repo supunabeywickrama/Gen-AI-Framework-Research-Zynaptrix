@@ -4,29 +4,42 @@ import { Activity, AlertTriangle, ShieldCheck, Server, MessageSquare, Send, Ther
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
-import { addChatMessage, addTelemetry, setSystemState, setAnomalyScore } from '../store/slices/copilotSlice';
+import { addChatMessage, addTelemetry, setSystemState, setAnomalyScore, inquireCopilot } from '../store/slices/copilotSlice';
+import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
+import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
+import { uploadManual, clearUploadStatus } from '../store/slices/ingestionSlice';
 
 export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
-  const { telemetry, chatHistory, systemState, anomalyScore, activeAgents } = useSelector((state: RootState) => state.copilot);
+  
+  // Redux-driven State
+  const { telemetry, chatHistory, systemState, anomalyScore } = useSelector((state: RootState) => state.copilot);
+  const { machines, currentMachineId, loading: machinesLoading } = useSelector((state: RootState) => state.machines);
+  const { activeSimulators } = useSelector((state: RootState) => state.simulator);
+  const { isUploading, uploadStatus } = useSelector((state: RootState) => state.ingestion);
   
   const [query, setQuery] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Upload States
+  // Filter telemetry points for the current machine
+  const filteredTelemetry = telemetry.filter(t => t.machineId === currentMachineId);
+  const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
+  
+  // Local transient UI states
   const [manualId, setManualId] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   
-  const [isSimulating, setIsSimulating] = useState(false);
+  const isSimulating = activeSimulators.includes(currentMachineId);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
-  }, []);
+    // Initial Bootstrap
+    dispatch(fetchMachines());
+    dispatch(fetchSimulatorStatus());
+  }, [dispatch]);
 
-  // WebSocket Telemetry Stream
+  // WebSocket Telemetry Stream (Centralized Dispatcher)
   useEffect(() => {
     let ws: WebSocket;
     let reconnectTimer: NodeJS.Timeout;
@@ -43,6 +56,7 @@ export default function IndustrialCopilotDashboard() {
           if (parsed.type === "telemetry") {
             const data = parsed.data;
             dispatch(addTelemetry({
+              machineId: data.machine_id || 'PUMP-001',
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
               temperature: data.temperature,
               current: data.motor_current,
@@ -53,13 +67,11 @@ export default function IndustrialCopilotDashboard() {
             dispatch(setSystemState('ANOMALY'));
             dispatch(setAnomalyScore(result.anomaly_score || 0.99));
             
-            // USE THE CLEAN FINAL PLAN DIRECTLY - NO REDUNDANT WRAPPERS
-            const alertMessage = result.final_execution_plan || "Critical Anomaly Detected. Initializing Diagnostic Sequence...";
-            
             dispatch(addChatMessage({ 
               role: 'agent', 
-              content: alertMessage,
-              images: result.retrieved_images || []
+              content: result.final_execution_plan || "Critical Anomaly Detected.",
+              images: result.retrieved_images || [],
+              machineId: result.machine_id
             }));
           }
         } catch (err) {
@@ -68,7 +80,7 @@ export default function IndustrialCopilotDashboard() {
       };
 
       ws.onclose = () => {
-        reconnectTimer = setTimeout(connectWS, 3000); // Self-heal after backend crash/restart
+        reconnectTimer = setTimeout(connectWS, 3000);
       };
       
       ws.onerror = () => {
@@ -81,105 +93,49 @@ export default function IndustrialCopilotDashboard() {
     return () => {
       clearTimeout(reconnectTimer);
       if (ws) {
-        ws.onclose = null; // Prevent infinite re-mounting loops
+        ws.onclose = null;
         ws.close();
       }
     };
   }, [dispatch]);
 
-  // Auto-scroll chat
+  // UI Helpers
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
-  const latestReading = telemetry[telemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
-
-  const handleManualInquiry = async () => {
+  // Thunk-based Interactions
+  const handleManualInquiry = () => {
     if (!query) return;
-    dispatch(addChatMessage({ role: 'user', content: query }));
+    dispatch(inquireCopilot({
+      machine_id: currentMachineId,
+      query,
+      machine_state: systemState === "NORMAL" ? "manual_inquiry_normal" : "anomaly_investigation",
+    }));
     setQuery('');
-    
-    // For simplicity, we just push the analyzing message...
-    dispatch(addChatMessage({ role: 'agent', content: 'Analyzing factory status deeply using Multi-Agent LangGraph...' }));
-    
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${apiUrl}/api/copilot/invoke`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          machine_state: systemState === "NORMAL" ? "manual_inquiry_normal" : "anomaly_investigation",
-          anomaly_score: anomalyScore,
-          suspect_sensor: "User Query",
-          recent_readings: latestReading
-        })
-      });
-      const data = await res.json();
-      dispatch(addChatMessage({ 
-        role: 'agent', 
-        content: data.graph_result?.final_execution_plan || "Diagnostics complete.",
-        images: data.graph_result?.retrieved_images || []
-      }));
-    } catch (e) {
-      dispatch(addChatMessage({ role: 'agent', content: 'Connection to AI Orchestrator Failed.' }));
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!uploadFile || !manualId) return;
-    setIsUploading(true);
-    setUploadStatus("Uploading to YOLOv8 Pipeline...");
-
-    const formData = new FormData();
-    formData.append("manual_id", manualId);
-    formData.append("file", uploadFile);
-
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${apiUrl}/ingest-manual`, {
-         method: 'POST',
-         body: formData
-      });
-      
-      if (res.ok) {
-         setUploadStatus("Ingestion Successful!");
-         dispatch(addChatMessage({ role: 'agent', content: `📚 Manual "${manualId}" successfully ingested and vectorized.` }));
-         setTimeout(() => { setUploadStatus(null); setManualId(""); setUploadFile(null); }, 3000);
-      } else {
-         const errorData = await res.json();
-         setUploadStatus(`Error: ${errorData.detail || "Upload failed"}`);
-      }
-    } catch(e) {
-      setUploadStatus("Connection Error to Backend.");
-    }
-    setIsUploading(false);
   };
 
   const toggleSimulation = async () => {
-    try {
-      // Robust dynamic host detection for local network testing
-      let base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      if (typeof window !== 'undefined' && base.includes('127.0.0.1') || base.includes('localhost')) {
-          const currentHost = window.location.hostname;
-          if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
-              base = `http://${currentHost}:8000`;
-          }
-      }
-      
-      const apiUrl = base.endsWith('/') ? base.slice(0, -1) : base;
-      const endpoint = isSimulating ? '/api/simulator/stop' : '/api/simulator/start';
-      
-      console.log(`📡 Sending simulation toggle to: ${apiUrl}${endpoint}`);
-      const res = await fetch(`${apiUrl}${endpoint}`, { method: 'POST' });
-      if (res.ok) {
-        setIsSimulating(!isSimulating);
-      } else {
-        const err = await res.json();
-        console.error("Simulation failed:", err);
-      }
-    } catch (e) {
-      console.error("Failed to toggle simulation", e);
+    if (isSimulating) {
+      await dispatch(stopSimulator(currentMachineId));
+    } else {
+      await dispatch(startSimulator(currentMachineId));
     }
+    // Refresh global status after toggle
+    dispatch(fetchSimulatorStatus());
+  };
+
+  const handleUpload = () => {
+    if (!uploadFile || !manualId) return;
+    dispatch(uploadManual({ manualId, file: uploadFile })).then((res) => {
+      if (res.meta.requestStatus === 'fulfilled') {
+        setTimeout(() => {
+          dispatch(clearUploadStatus());
+          setManualId("");
+          setUploadFile(null);
+        }, 3000);
+      }
+    });
   };
 
   return (
@@ -192,11 +148,24 @@ export default function IndustrialCopilotDashboard() {
           </h1>
           <p className="text-slate-400 text-sm mt-1 font-medium tracking-wide">Generative AI Multi-Agent Orchestration Engine</p>
         </div>
-        <div className={`px-5 py-2 rounded-full border shadow-lg flex items-center gap-2 font-bold tracking-widest ${
-          systemState === 'NORMAL' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'
-        }`}>
-          {systemState === 'NORMAL' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
-          {systemState}
+        <div className="flex items-center gap-6">
+          <div className="flex bg-slate-800/50 rounded-xl p-1 border border-slate-700/50">
+            {machines.map(m => (
+              <button
+                key={m.machine_id}
+                onClick={() => dispatch(setCurrentMachineId(m.machine_id))}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${currentMachineId === m.machine_id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+          <div className={`px-5 py-2 rounded-full border shadow-lg flex items-center gap-2 font-bold tracking-widest ${
+            systemState === 'NORMAL' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'
+          }`}>
+            {systemState === 'NORMAL' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
+            {systemState}
+          </div>
         </div>
       </header>
 
@@ -249,7 +218,7 @@ export default function IndustrialCopilotDashboard() {
             <div className="h-[300px] w-full relative">
               {isMounted && (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={telemetry} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <LineChart data={filteredTelemetry} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                     <XAxis dataKey="time" stroke="#475569" tick={{fill: '#94a3b8'}} />
                     <YAxis stroke="#475569" tick={{fill: '#94a3b8'}} />
@@ -318,8 +287,8 @@ export default function IndustrialCopilotDashboard() {
                    </button>
                  </div>
                  {uploadStatus && (
-                   <p className={`text-xs font-semibold flex items-center gap-1 ${uploadStatus.includes('Success') ? 'text-emerald-400' : uploadStatus.includes('Error') ? 'text-red-400' : 'text-blue-400'}`}>
-                     {uploadStatus.includes('Success') ? <CheckCircle size={14} /> : uploadStatus.includes('Error') ? <AlertTriangle size={14} /> : <Loader2 size={14} className="animate-spin"/>}
+                   <p className={`text-xs font-semibold flex items-center gap-1 ${uploadStatus.includes('Successful') ? 'text-emerald-400' : uploadStatus.includes('Error') ? 'text-red-400' : 'text-blue-400'}`}>
+                     {uploadStatus.includes('Successful') ? <CheckCircle size={14} /> : uploadStatus.includes('Error') ? <AlertTriangle size={14} /> : <Loader2 size={14} className="animate-spin"/>}
                      {uploadStatus}
                    </p>
                  )}
@@ -367,19 +336,16 @@ export default function IndustrialCopilotDashboard() {
                         );
                       }
                       return (
-                        <div key={partIdx} className="space-y-2">
+                        <div key={partIdx} className="part-content">
                           {part.split('\n').map((line, lineIdx) => {
-                            // Header 3 (###)
                             if (line.trim().startsWith('###')) {
                               return <h3 key={lineIdx} className="text-lg font-bold text-blue-400 mt-4 border-b border-slate-700/50 pb-1">{line.replace('###', '').trim()}</h3>;
                             }
-                            // Header 2 (##)
                             if (line.trim().startsWith('##')) {
                               return <h2 key={lineIdx} className="text-xl font-black text-slate-100 mt-6 flex items-center gap-2">
                                 <Activity size={18} className="text-indigo-500" /> {line.replace('##', '').trim()}
                               </h2>;
                             }
-                            // Bold text (**)
                             if (line.includes('**')) {
                               const segments = line.split(/(\*\*.*?\*\*)/g);
                               return (
@@ -400,7 +366,7 @@ export default function IndustrialCopilotDashboard() {
                     })}
                   </div>
 
-                  {/* Fallback for images not tagged in text */}
+                  {/* Supplemental Images */}
                   {msg.images && msg.images.length > 0 && !msg.content.match(/\[IMAGE[_\s-]?\d+\]/i) && (
                     <div className="mt-6 pt-4 border-t border-slate-700/50 grid grid-cols-1 gap-4">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supplemental Records</p>

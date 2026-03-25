@@ -1,6 +1,7 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 
 interface TelemetryPoint {
+  machineId: string;
   time: string;
   temperature: number;
   current: number;
@@ -11,6 +12,7 @@ export interface ChatMessage {
   role: 'agent' | 'user';
   content: string;
   images?: string[];
+  machineId?: string;
 }
 
 interface CopilotState {
@@ -22,14 +24,38 @@ interface CopilotState {
 }
 
 const initialState: CopilotState = {
-  telemetry: [{ time: '10:00', temperature: 80, current: 40, vibration: 5 }],
+  telemetry: [],
   chatHistory: [
-    { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring real-time sensor streams via InfluxDB.' }
+    { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring multi-machine factory floor.' }
   ],
   systemState: 'NORMAL',
   anomalyScore: 0.001,
   activeAgents: ['Sensor', 'Diagnostic', 'Strategy', 'Critic', 'RAG'],
 };
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export const inquireCopilot = createAsyncThunk(
+  'copilot/inquire',
+  async (payload: { machine_id: string; query: string; machine_state: string }, { dispatch }) => {
+    // Add user message first
+    dispatch(addChatMessage({ role: 'user', content: payload.query, machineId: payload.machine_id }));
+    
+    // Add a placeholder agent message
+    dispatch(addChatMessage({ role: 'agent', content: 'Thinking...' }));
+    const msgId = 1111; // We'd need a real ID system for updates, using index for now
+
+    const response = await fetch(`${API_BASE}/api/copilot/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) throw new Error('Copilot inquiry failed');
+    const data = await response.json();
+    return data;
+  }
+);
 
 const copilotSlice = createSlice({
   name: 'copilot',
@@ -42,9 +68,12 @@ const copilotSlice = createSlice({
     addChatMessage(state, action: PayloadAction<ChatMessage>) {
       state.chatHistory.push(action.payload);
     },
-    updateChatMessage(state, action: PayloadAction<{ index: number; content: string }>) {
+    updateChatMessage(state, action: PayloadAction<{ index: number; content: string; images?: string[] }>) {
       if (state.chatHistory[action.payload.index]) {
         state.chatHistory[action.payload.index].content = action.payload.content;
+        if (action.payload.images) {
+          state.chatHistory[action.payload.index].images = action.payload.images;
+        }
       }
     },
     setSystemState(state, action: PayloadAction<'NORMAL' | 'ANOMALY'>) {
@@ -57,6 +86,22 @@ const copilotSlice = createSlice({
       state.activeAgents = action.payload;
     }
   },
+  extraReducers: (builder) => {
+    builder.addCase(inquireCopilot.fulfilled, (state, action) => {
+      const lastIdx = state.chatHistory.length - 1;
+      const result = action.payload.graph_result;
+      state.chatHistory[lastIdx] = {
+        role: 'agent',
+        content: result.final_execution_plan,
+        images: result.retrieved_images,
+        machineId: action.meta.arg.machine_id
+      };
+    });
+    builder.addCase(inquireCopilot.rejected, (state) => {
+       const lastIdx = state.chatHistory.length - 1;
+       state.chatHistory[lastIdx].content = "⚠️ Error communicating with Copilot backend.";
+    });
+  }
 });
 
 export const { 
@@ -65,7 +110,7 @@ export const {
   updateChatMessage,
   setSystemState, 
   setAnomalyScore,
-  setActiveAgents 
+  setActiveAgents
 } = copilotSlice.actions;
 
 export default copilotSlice.reducer;

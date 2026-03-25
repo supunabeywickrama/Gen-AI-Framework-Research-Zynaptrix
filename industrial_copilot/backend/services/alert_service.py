@@ -52,11 +52,15 @@ def format_alert(result: dict) -> dict:
     alert = {
         "severity":              severity,
         "timestamp":             result.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        "machine_id":            sensors.get("machine_id", "PUMP-001"),
         "reconstruction_score":  round(score, 6),
         "threshold":             round(threshold, 6),
         "suspect_sensor":        suspect_sensor,
         "consecutive_anomalies": result.get("consecutive_anomalies", 1),
-        "sensor_readings":       {k: round(v, 3) for k, v in sensors.items()},
+        "sensor_readings":       {
+            k: (round(v, 3) if isinstance(v, (int, float)) else v)
+            for k, v in sensors.items()
+        },
     }
     return alert
 

@@ -33,104 +33,89 @@ MODEL_DIR      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", 
 DENSE_MODEL    = os.path.join(MODEL_DIR, "autoencoder.keras")
 LSTM_MODEL     = os.path.join(MODEL_DIR, "lstm_autoencoder.keras")
 THRESHOLD_FILE = os.path.join(MODEL_DIR, "thresholds.json")
-SCALER_PATH    = os.path.join(MODEL_DIR, "scaler.pkl")
 
 
 class AnomalyDetector:
     """
-    Lightweight wrapper around the trained Dense Autoencoder for inference.
-
-    Example:
-        detector = AnomalyDetector()
-        result = detector.detect({"temperature": 175, "motor_current": 7.2, ...})
-        print(result["is_anomaly"], result["score"])
+    Inference wrapper that caches models/scalers per machine_id.
     """
 
-    def __init__(self, model_path: str = DENSE_MODEL,
-                 scaler_path: str = SCALER_PATH,
-                 threshold_key: str = "dense"):
-        self._model    = None
-        self._scaler   = None
-        self._threshold = None
-        self._model_path   = model_path
-        self._scaler_path  = scaler_path
-        self._threshold_key = threshold_key
+    def __init__(self, threshold_type: str = "dense"):
+        self._registry = {} # {machine_id: {"model": ..., "scaler": ..., "threshold": ...}}
+        self._threshold_type = threshold_type
 
-    def _load(self):
-        if self._model is not None:
-            return
+    def _get_assets(self, machine_id: str):
+        if machine_id in self._registry:
+            return self._registry[machine_id]
 
-        # Lazy import TF so the file is importable without TF installed
         import tensorflow as tf
+        from preprocessing.normalization import get_scaler_path
 
-        if not os.path.exists(self._model_path):
-            raise FileNotFoundError(
-                f"Model not found: {self._model_path}\n"
-                "Run 'python models/train_model.py' first."
-            )
-        self._model = tf.keras.models.load_model(self._model_path)
+        # Paths
+        model_path = os.path.join(MODEL_DIR, f"autoencoder_{machine_id}.keras")
+        scaler_path = get_scaler_path(machine_id)
+        
+        # Fallback to default if machine-specific doesn't exist yet
+        if not os.path.exists(model_path):
+            log.warning(f"Model not found for {machine_id}, falling back to PUMP-001")
+            model_path = os.path.join(MODEL_DIR, "autoencoder_PUMP-001.keras")
+            scaler_path = get_scaler_path("PUMP-001")
 
-        with open(self._scaler_path, "rb") as f:
-            self._scaler = pickle.load(f)
+        log.info(f"Loading assets for {machine_id} ...")
+        model = tf.keras.models.load_model(model_path)
+        
+        with open(scaler_path, "rb") as f:
+            scaler = pickle.load(f)
 
         with open(THRESHOLD_FILE) as f:
             thresholds = json.load(f)
-        self._threshold = thresholds[self._threshold_key]
-        log.info(f"AnomalyDetector loaded | threshold={self._threshold:.6f}")
+        
+        threshold_key = f"{machine_id}_{self._threshold_type}"
+        if threshold_key not in thresholds:
+            threshold_key = f"PUMP-001_{self._threshold_type}"
+        
+        threshold = thresholds[threshold_key]
+
+        assets = {"model": model, "scaler": scaler, "threshold": threshold}
+        self._registry[machine_id] = assets
+        return assets
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def detect(self, reading: dict) -> dict:
         """
         Detect anomaly in a single sensor reading.
-
-        Args:
-            reading: dict with keys matching SENSOR_COLUMNS
-
-        Returns:
-            {
-              "is_anomaly": bool,
-              "score":      float  (reconstruction MSE),
-              "threshold":  float,
-              "sensors":    dict of raw input values,
-            }
+        Expects 'machine_id' in the reading dict.
         """
-        self._load()
+        machine_id = reading.get("machine_id", "PUMP-001")
+        assets = self._get_assets(machine_id)
+        
+        # Extract only sensor columns for model
         x = np.array([[reading[c] for c in SENSOR_COLUMNS]], dtype=np.float32)
-        x_scaled = self._scaler.transform(x)
-        x_pred   = self._model.predict(x_scaled, verbose=0)
+        x_scaled = assets["scaler"].transform(x)
+        x_pred   = assets["model"].predict(x_scaled, verbose=0)
         score    = float(np.mean(np.square(x_scaled - x_pred)))
 
         return {
-            "is_anomaly": score > self._threshold,
+            "is_anomaly": score > assets["threshold"],
             "score":      round(score, 6),
-            "threshold":  round(self._threshold, 6),
+            "threshold":  round(assets["threshold"], 6),
             "sensors":    reading,
+            "machine_id": machine_id
         }
 
-    def detect_batch(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Detect anomalies on an entire DataFrame.
-
-        Returns the input DataFrame with two extra columns:
-            recon_error  — MSE score per row
-            is_anomaly   — bool flag
-        """
-        self._load()
+    def detect_batch(self, df: pd.DataFrame, machine_id: str = "PUMP-001") -> pd.DataFrame:
+        """Detect anomalies on an entire DataFrame for one machine."""
+        assets = self._get_assets(machine_id)
         X = df[SENSOR_COLUMNS].values.astype(np.float32)
-        X_scaled = self._scaler.transform(X)
-        X_pred   = self._model.predict(X_scaled, verbose=0)
+        X_scaled = assets["scaler"].transform(X)
+        X_pred   = assets["model"].predict(X_scaled, verbose=0)
         errors   = np.mean(np.square(X_scaled - X_pred), axis=1)
 
         result = df.copy()
         result["recon_error"] = errors
-        result["is_anomaly"]  = errors > self._threshold
+        result["is_anomaly"]  = errors > assets["threshold"]
         return result
-
-    @property
-    def threshold(self) -> float:
-        self._load()
-        return self._threshold
 
 
 # ── CLI batch runner ──────────────────────────────────────────────────────────

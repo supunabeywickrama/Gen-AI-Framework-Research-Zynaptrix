@@ -57,7 +57,7 @@ class RAGGenerator:
             image_list_str = "\n".join([f"- [IMAGE_{i}]: {img.content} (Type: {img.type})" for i, img in enumerate(retrieved_data["images"])])
             
             system_prompt = (
-                "You are a Senior Industrial Systems Engineer specializing in the Zynaptrix-9000 Turbo Pump.\n"
+                f"You are a Senior Industrial Systems Engineer specializing in the technical manual for: {manual_id}.\n"
                 "Your objective is to generate a comprehensive, human-readable repair procedure based ONLY on the provided manual context.\n\n"
                 "### FORMATTING PROTOCOL:\n"
                 "1. **NO INTRO/OUTRO**: Start directly with the first technical heading.\n"

@@ -50,6 +50,63 @@ async def ingest_manual(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
 
+from unified_rag.db.database import SessionLocal
+from unified_rag.db.models import Machine
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+# ... (existing imports)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+class MachineCreate(BaseModel):
+    machine_id: str
+    name: str
+    location: str
+    manual_id: str
+
+class MachineResponse(BaseModel):
+    machine_id: str
+    name: str
+    location: str
+    manual_id: str
+    class Config:
+        from_attributes = True
+
+@router.post("/machines", response_model=MachineResponse)
+async def create_machine(machine: MachineCreate, db: Session = Depends(get_db)):
+    # Check if machine already exists to avoid 500/IntegrityError
+    existing = db.query(Machine).filter(Machine.machine_id == machine.machine_id).first()
+    if existing:
+        # Update existing record if needed
+        for key, value in machine.model_dump().items():
+            setattr(existing, key, value)
+        db.commit()
+        db.refresh(existing)
+        return existing
+        
+    db_machine = Machine(**machine.model_dump())
+    db.add(db_machine)
+    db.commit()
+    db.refresh(db_machine)
+    return db_machine
+
+@router.get("/machines", response_model=list[MachineResponse])
+async def list_machines(db: Session = Depends(get_db)):
+    return db.query(Machine).all()
+
+@router.get("/machines/{machine_id}", response_model=MachineResponse)
+async def get_machine(machine_id: str, db: Session = Depends(get_db)):
+    machine = db.query(Machine).filter(Machine.machine_id == machine_id).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Machine not found")
+    return machine
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:

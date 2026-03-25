@@ -19,6 +19,7 @@ class CopilotState(TypedDict):
     """
     # Alert Inputs from the LSTM/Autoencoder
     event_id: str
+    machine_id: str
     machine_state: str
     anomaly_score: float
     suspect_sensor: Optional[str]
@@ -59,23 +60,24 @@ def knowledge_retrieval_node(state: CopilotState):
     2. Resolves technical diagram paths for the React Frontend.
     3. Normalizes OS-level path separators to ensure 100% URL reliability.
     """
-    logger.info("🤖 [Agent] Knowledge Retrieval (Powered by Improved Unified RAG)")
+    logger.info(f"🤖 [Agent] Knowledge Retrieval for Machine: {state.get('machine_id', 'Unknown')}")
+    machine_id = state.get('machine_id', 'PUMP-001')
     query = f"Provide repair instructions and troubleshooting steps for {state['machine_state']}."
     
     images = []
     if rag_gen:
         try:
-            # DYNAMIC MANUAL SELECTION: Fetch the most recent manual ID from DB
+            # DYNAMIC MANUAL SELECTION: Resolve machine_id -> manual_id via Machine Registry
             from unified_rag.db.database import SessionLocal
-            from sqlalchemy import desc
-            from unified_rag.db.models import ManualChunk
+            from unified_rag.db.models import Machine
             
             db = SessionLocal()
-            # We fetch the latest ingested manual to ensure we are using the most up-to-date documentation
-            latest_chunk = db.query(ManualChunk.manual_id).order_by(desc(ManualChunk.id)).first()
-            manual_id = latest_chunk[0] if latest_chunk else "Zynaptrix_9000"
+            # Lookup the machine's specific manual
+            machine_record = db.query(Machine).filter(Machine.machine_id == machine_id).first()
+            manual_id = machine_record.manual_id if machine_record else "Zynaptrix_9000"
             db.close()
             
+            logger.info(f"🔍 [RAG Routing] Machine {machine_id} resolved to Manual: {manual_id}")
             rag_response = rag_gen.generate_response(query, manual_id)
             
             # API URL configuration with dynamic fallback
@@ -84,8 +86,7 @@ def knowledge_retrieval_node(state: CopilotState):
                 api_url = api_url[:-1]
 
             for img_path in rag_response.get("images", []):
-                # CROSS-PLATFORM NORMALIZATION:
-                # Windows uses \, but web URLs require /. We normalize here to avoid 404s.
+                # CROSS-PLATFORM NORMALIZATION
                 normalized_path = img_path.replace('\\', '/')
                 # Transform filesystem path to virtual mount path (/static)
                 web_path = normalized_path.replace("data/", "/static/")
@@ -95,7 +96,8 @@ def knowledge_retrieval_node(state: CopilotState):
                 
             rag = rag_response['answer']
         except Exception as e:
-            rag = f"Manual Extract Failed: {str(e)}"
+            logger.error(f"❌ [RAG Routing] Dynamic lookup failed for {machine_id}: {e}")
+            rag = f"Manual Extract Failed for {machine_id}: {str(e)}"
     else:
         rag = "Standard Procedures: Maintain equipment as per manufacturer specifications."
         
@@ -116,7 +118,7 @@ def critic_node(state: CopilotState):
     Ensures the output is sanitized and formatted for the Next.js 'Markdown-Lite' renderer.
     """
     logger.info("🤖 [Agent] Critic")
-    feedback = "Validation: Safety protocols verified against Zynaptrix-9000 Manual. Strategy approved for execution."
+    feedback = f"Validation: Safety protocols verified against {state.get('machine_id', 'Asset')} Technical Documentation. Strategy approved for execution."
     
     # Construction of the final Multimodal Payload
     final_output = (
