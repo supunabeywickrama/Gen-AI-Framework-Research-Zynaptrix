@@ -206,3 +206,7 @@ async def get_simulator_status():
     """Returns a list of machine IDs that are currently being simulated."""
     active = [mid for mid, proc in simulator_processes.items() if proc.poll() is None]
     return {"active_simulators": active}
+
+# --- Modular Machine Registry ---
+from api.machine_api import router as machine_registry_router
+app.include_router(machine_registry_router)

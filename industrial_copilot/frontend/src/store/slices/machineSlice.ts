@@ -24,9 +24,27 @@ const initialState: MachineState = {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const fetchMachines = createAsyncThunk('machines/fetchMachines', async () => {
-    const response = await fetch(`${API_BASE}/machines`);
+    const response = await fetch(`${API_BASE}/api/machines`);
     if (!response.ok) throw new Error('Failed to fetch machines');
     return (await response.json()) as Machine[];
+});
+
+export const registerMachine = createAsyncThunk('machines/registerMachine', async (machine: Machine) => {
+    const response = await fetch(`${API_BASE}/api/machines`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(machine),
+    });
+    if (!response.ok) throw new Error('Failed to register machine');
+    return (await response.json()) as Machine;
+});
+
+export const deleteMachine = createAsyncThunk('machines/deleteMachine', async (machineId: string) => {
+    const response = await fetch(`${API_BASE}/api/machines/delete/${machineId}`, {
+        method: 'POST',
+    });
+    if (!response.ok) throw new Error('Failed to decommission machine');
+    return machineId;
 });
 
 const machineSlice = createSlice({
@@ -49,6 +67,38 @@ const machineSlice = createSlice({
       .addCase(fetchMachines.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Unknown error';
+      })
+      .addCase(registerMachine.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(registerMachine.fulfilled, (state, action) => {
+        state.loading = false;
+        // Check if machine already exists in local list, update it, otherwise add it
+        const index = state.machines.findIndex(m => m.machine_id === action.payload.machine_id);
+        if (index !== -1) {
+            state.machines[index] = action.payload;
+        } else {
+            state.machines.push(action.payload);
+        }
+      })
+      .addCase(registerMachine.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Registration failed';
+      })
+      .addCase(deleteMachine.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(deleteMachine.fulfilled, (state, action) => {
+        state.loading = false;
+        state.machines = state.machines.filter(m => m.machine_id !== action.payload);
+        // If current machine was deleted, reset it to the first available or default
+        if (state.currentMachineId === action.payload) {
+            state.currentMachineId = state.machines.length > 0 ? state.machines[0].machine_id : 'PUMP-001';
+        }
+      })
+      .addCase(deleteMachine.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Deletion failed';
       });
   },
 });

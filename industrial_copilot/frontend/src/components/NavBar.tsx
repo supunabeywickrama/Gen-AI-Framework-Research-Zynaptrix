@@ -9,6 +9,7 @@ const NavBar = () => {
 
   const navItems = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { name: 'Machine Management', href: '/machines', icon: Cog },
     { name: 'Knowledge Ingestion', href: '/ingestion', icon: Database },
   ];
 
