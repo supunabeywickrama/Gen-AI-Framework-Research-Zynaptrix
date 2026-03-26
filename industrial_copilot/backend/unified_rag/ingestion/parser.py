@@ -1,6 +1,10 @@
 import fitz  # PyMuPDF
 import os
+import logging
 from PIL import Image
+
+# Suppress pypdf warnings
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 try:
     from ultralytics import YOLO

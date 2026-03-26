@@ -34,3 +34,4 @@ pytest
 requests
 sentence-transformers
 streamlit
+pypdf

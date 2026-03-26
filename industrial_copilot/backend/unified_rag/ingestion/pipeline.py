@@ -4,6 +4,7 @@ from unified_rag.embeddings.embedder import embedder
 from unified_rag.ingestion.captioner import ImageCaptioner
 from unified_rag.db.database import SessionLocal
 from unified_rag.db.models import ManualChunk
+import time
 
 def process_manual(file_path: str, manual_id: str):
     """
@@ -37,7 +38,8 @@ def process_manual(file_path: str, manual_id: str):
     # 4. Embed and store to Unified Vector DB
     print(f"🧠 [Pipeline] Stage 4/4: Embedding and storing to database...")
     
-    batch_size = 50
+    batch_size = 20  # Reduced from 50 to prevent connection timeouts with large payloads
+    max_retries = 3  # Retry logic for transient database issues
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
         print(f"   ∟ Processing batch {i//batch_size + 1}/{(len(chunks)-1)//batch_size + 1} ({len(batch)} chunks)...")
@@ -59,27 +61,35 @@ def process_manual(file_path: str, manual_id: str):
         if not batch_to_save:
             continue
             
-        db = SessionLocal()
-        try:
-            for chunk, emb in batch_to_save:
-                db_chunk = ManualChunk(
-                    manual_id=chunk["manual_id"],
-                    type=chunk["type"],
-                    content=chunk["content"],
-                    path=chunk.get("path"), 
-                    embedding=emb,
-                    page=chunk["page"]
-                )
-                db.add(db_chunk)
-            
-            db.commit()
-            print(f"   💾 [Pipeline] Batch {i//batch_size + 1} saved successfully.")
-        except Exception as e:
-            db.rollback()
-            print(f"   🔥 [Pipeline] Error saving batch {i//batch_size + 1}: {e}")
-            # We don't raise here so the process can attempt subsequent batches
-        finally:
-            db.close()
+        retry_count = 0
+        while retry_count < max_retries:
+            db = SessionLocal()
+            try:
+                for chunk, emb in batch_to_save:
+                    db_chunk = ManualChunk(
+                        manual_id=chunk["manual_id"],
+                        type=chunk["type"],
+                        content=chunk["content"],
+                        path=chunk.get("path"), 
+                        embedding=emb,
+                        page=chunk["page"]
+                    )
+                    db.add(db_chunk)
+                
+                db.commit()
+                print(f"   💾 [Pipeline] Batch {i//batch_size + 1} saved successfully.")
+                break # Success
+            except Exception as e:
+                db.rollback()
+                retry_count += 1
+                if retry_count < max_retries:
+                    wait_time = 2 ** retry_count
+                    print(f"   ⚠️ [Pipeline] Error saving batch {i//batch_size + 1} (Attempt {retry_count}/{max_retries}): {e}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"   🔥 [Pipeline] Fatal error saving batch {i//batch_size + 1} after {max_retries} attempts: {e}")
+            finally:
+                db.close()
 
     print(f"✨ [Pipeline] SUCCESS: Ingestion for {manual_id} finalized.")
     return {"status": "success", "chunks_processed": len(chunks)}
