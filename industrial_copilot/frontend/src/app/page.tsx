@@ -150,10 +150,10 @@ export default function IndustrialCopilotDashboard() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-10">
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-8 pb-10">
         
-        {/* Left Column: Telemetry & Models */}
-        <div className="xl:col-span-2 flex flex-col gap-8">
+        {/* Left Column: Telemetry & Models (3/5 width) */}
+        <div className="xl:col-span-3 flex flex-col gap-8">
           
           {/* SENSOR KPI CARDS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -191,7 +191,7 @@ export default function IndustrialCopilotDashboard() {
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex-1">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[450px]">
             <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 rounded-full blur-[120px] -z-10 pointer-events-none translate-x-1/3 -translate-y-1/3"></div>
             <div className="flex justify-between items-center mb-8 relative">
               <div>
@@ -208,7 +208,7 @@ export default function IndustrialCopilotDashboard() {
                 {isSimulating ? "Terminate Stream" : "Establish Stream"}
               </button>
             </div>
-            <div className="h-[400px] w-full relative">
+            <div className="h-[280px] w-full relative">
               {isMounted && (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={filteredTelemetry} margin={{ top: 5, right: 30, bottom: 5, left: 0 }}>
@@ -251,39 +251,39 @@ export default function IndustrialCopilotDashboard() {
         </div>
 
 
-        {/* Right Column: AI Interaction */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative h-[calc(100vh-140px)]">
+        {/* Right Column: AI Interaction (2/5 width) */}
+        <div className="xl:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative h-[calc(100vh-140px)]">
           <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
           <div className="p-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-10 flex justify-between items-center">
             <h2 className="text-xl font-bold flex items-center gap-2 text-slate-100">
-              <MessageSquare className="text-blue-400" /> Human-in-the-Loop
+              <MessageSquare className="text-blue-400" /> Diagnostic Intelligence
             </h2>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+          <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
             {chatHistory.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${
+                <div className={`max-w-[95%] rounded-3xl p-6 shadow-2xl ${
                   msg.role === 'user' 
                     ? 'bg-blue-600 text-white rounded-br-none' 
-                    : 'bg-slate-800 text-slate-200 border border-slate-700/50 rounded-bl-none leading-relaxed'}`}>
+                    : 'bg-slate-800/80 text-slate-100 border border-slate-700/50 rounded-bl-none leading-relaxed backdrop-blur-sm'}`}>
                   
                   {/* Human-readable interleaved content parser */}
-                  <div className="text-sm space-y-4">
+                  <div className="text-[15px] space-y-5">
                     {msg.content.split(/(\[IMAGE[_\s-]?\d+\])/gi).map((part, partIdx) => {
                       const imageMatch = part.match(/\[IMAGE[_\s-]?(\d+)\]/i);
                       if (imageMatch && msg.images && msg.images[parseInt(imageMatch[1])]) {
                         const imgIdx = parseInt(imageMatch[1]);
                         return (
-                          <div key={partIdx} className="my-4 rounded-xl overflow-hidden border border-slate-700 bg-slate-900/50 shadow-inner group">
-                            <div className="bg-slate-800/80 px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-700 flex justify-between items-center text-xs">
+                          <div key={partIdx} className="my-6 rounded-2xl overflow-hidden border border-slate-700 bg-slate-950/50 shadow-2xl group">
+                            <div className="bg-slate-800/80 px-4 py-2.5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-700/50 flex justify-between items-center">
                               <span>Technical Figure {imgIdx + 1}</span>
-                              <span className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">Visual Evidence</span>
+                              <span className="text-blue-400 px-2 py-0.5 bg-blue-400/10 rounded">Source Found</span>
                             </div>
                             <img 
                               src={msg.images[imgIdx]} 
                               alt={`Diagnostic Figure ${imgIdx + 1}`}
-                              className="w-full h-auto max-h-[400px] object-contain cursor-zoom-in hover:scale-[1.01] transition-transform duration-300"
+                              className="w-full h-auto max-h-[500px] object-contain hover:scale-[1.02] transition-transform duration-500"
                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                             />
                           </div>
@@ -293,27 +293,28 @@ export default function IndustrialCopilotDashboard() {
                         <div key={partIdx} className="part-content">
                           {part.split('\n').map((line, lineIdx) => {
                             if (line.trim().startsWith('###')) {
-                              return <h3 key={lineIdx} className="text-lg font-bold text-blue-400 mt-4 border-b border-slate-700/50 pb-1">{line.replace('###', '').trim()}</h3>;
+                              return <h3 key={lineIdx} className="text-xl font-black text-blue-400 mt-6 border-b border-blue-500/20 pb-2 mb-3">{line.replace('###', '').trim()}</h3>;
                             }
                             if (line.trim().startsWith('##')) {
-                              return <h2 key={lineIdx} className="text-xl font-black text-slate-100 mt-6 flex items-center gap-2">
-                                <Activity size={18} className="text-indigo-500" /> {line.replace('##', '').trim()}
+                              return <h2 key={lineIdx} className="text-2xl font-black text-white mt-8 mb-4 flex items-center gap-3">
+                                <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse"></div>
+                                {line.replace('##', '').trim()}
                               </h2>;
                             }
                             if (line.includes('**')) {
                               const segments = line.split(/(\*\*.*?\*\*)/g);
                               return (
-                                <p key={lineIdx} className="whitespace-pre-wrap">
+                                <p key={lineIdx} className="whitespace-pre-wrap mb-4">
                                   {segments.map((seg, segIdx) => {
                                     if (seg.startsWith('**') && seg.endsWith('**')) {
-                                      return <strong key={segIdx} className="text-blue-300 font-bold">{seg.slice(2, -2)}</strong>;
+                                      return <strong key={segIdx} className="text-blue-300 font-black border-b border-blue-400/30">{seg.slice(2, -2)}</strong>;
                                     }
                                     return seg;
                                   })}
                                 </p>
                               );
                             }
-                            return <p key={lineIdx} className="whitespace-pre-wrap">{line}</p>;
+                            return <p key={lineIdx} className="whitespace-pre-wrap mb-4 leading-loose">{line}</p>;
                           })}
                         </div>
                       );
