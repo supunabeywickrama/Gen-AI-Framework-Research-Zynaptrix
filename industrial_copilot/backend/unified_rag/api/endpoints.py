@@ -100,6 +100,19 @@ async def create_machine(machine: MachineCreate, db: Session = Depends(get_db)):
 async def list_machines(db: Session = Depends(get_db)):
     return db.query(Machine).all()
 
+@router.post("/machines/delete/{machine_id}")
+async def delete_machine(machine_id: str, db: Session = Depends(get_db)):
+    print(f"🗑️ [API] Deletion request (POST) for Machine ID: {machine_id}")
+    machine = db.query(Machine).filter(Machine.machine_id == machine_id).first()
+    if not machine:
+        print(f"⚠️ [API] Machine {machine_id} not found for deletion")
+        raise HTTPException(status_code=404, detail="Machine not found")
+    
+    db.delete(machine)
+    db.commit()
+    print(f"✅ [API] Machine {machine_id} successfully decommissioned")
+    return {"message": f"Machine {machine_id} deleted successfully"}
+
 @router.get("/machines/{machine_id}", response_model=MachineResponse)
 async def get_machine(machine_id: str, db: Session = Depends(get_db)):
     machine = db.query(Machine).filter(Machine.machine_id == machine_id).first()
