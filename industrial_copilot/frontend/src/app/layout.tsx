@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 import { ReduxProvider } from "../store/Provider";
+import NavBar from "../components/NavBar";
 
 export default function RootLayout({
   children,
@@ -29,8 +30,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <ReduxProvider>{children}</ReduxProvider>
+      <body className="min-h-full flex flex-col bg-slate-950">
+        <ReduxProvider>
+          <NavBar />
+          <main className="flex-1">
+            {children}
+          </main>
+        </ReduxProvider>
       </body>
     </html>
   );

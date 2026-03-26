@@ -7,7 +7,6 @@ import { RootState, AppDispatch } from '../store/store';
 import { addChatMessage, addTelemetry, setSystemState, setAnomalyScore, inquireCopilot } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
-import { uploadManual, clearUploadStatus } from '../store/slices/ingestionSlice';
 
 export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
@@ -16,18 +15,13 @@ export default function IndustrialCopilotDashboard() {
   const { telemetry, chatHistory, systemState, anomalyScore } = useSelector((state: RootState) => state.copilot);
   const { machines, currentMachineId, loading: machinesLoading } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
-  const { isUploading, uploadStatus } = useSelector((state: RootState) => state.ingestion);
-  
+// Local transient UI states
   const [query, setQuery] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Filter telemetry points for the current machine
   const filteredTelemetry = telemetry.filter(t => t.machineId === currentMachineId);
   const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
-  
-  // Local transient UI states
-  const [manualId, setManualId] = useState('');
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
   
   const isSimulating = activeSimulators.includes(currentMachineId);
   const [isMounted, setIsMounted] = useState(false);
@@ -125,28 +119,15 @@ export default function IndustrialCopilotDashboard() {
     dispatch(fetchSimulatorStatus());
   };
 
-  const handleUpload = () => {
-    if (!uploadFile || !manualId) return;
-    dispatch(uploadManual({ manualId, file: uploadFile })).then((res) => {
-      if (res.meta.requestStatus === 'fulfilled') {
-        setTimeout(() => {
-          dispatch(clearUploadStatus());
-          setManualId("");
-          setUploadFile(null);
-        }, 3000);
-      }
-    });
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-x-hidden">
-      <header className="flex justify-between items-center mb-8 border-b-2 border-slate-800 pb-6 bg-slate-900/40 backdrop-blur-md shadow-xl rounded-xl p-6">
+      <header className="flex justify-between items-center mb-8 border-b border-slate-800 pb-6 bg-slate-900/40 backdrop-blur-md shadow-xl rounded-2xl p-6">
         <div>
-          <h1 className="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent flex items-center gap-3">
+          <h1 className="text-3xl font-black bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent flex items-center gap-3">
             <Server className="text-blue-500" />
-            Zynaptrix Industrial Copilot
+            Factory Fleet Control Room
           </h1>
-          <p className="text-slate-400 text-sm mt-1 font-medium tracking-wide">Generative AI Multi-Agent Orchestration Engine</p>
+          <p className="text-slate-400 text-sm mt-1 font-semibold tracking-wide uppercase opacity-70">Autonomous Multi-Agent Orchestration</p>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex bg-slate-800/50 rounded-xl p-1 border border-slate-700/50">
@@ -154,16 +135,16 @@ export default function IndustrialCopilotDashboard() {
               <button
                 key={m.machine_id}
                 onClick={() => dispatch(setCurrentMachineId(m.machine_id))}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${currentMachineId === m.machine_id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${currentMachineId === m.machine_id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-slate-200'}`}
               >
                 {m.name}
               </button>
             ))}
           </div>
-          <div className={`px-5 py-2 rounded-full border shadow-lg flex items-center gap-2 font-bold tracking-widest ${
+          <div className={`px-5 py-2 rounded-full border shadow-lg flex items-center gap-2 font-black tracking-widest text-xs ${
             systemState === 'NORMAL' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'
           }`}>
-            {systemState === 'NORMAL' ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
+            {systemState === 'NORMAL' ? <ShieldCheck size={16} /> : <AlertTriangle size={16} />}
             {systemState}
           </div>
         </div>
@@ -176,126 +157,99 @@ export default function IndustrialCopilotDashboard() {
           
           {/* SENSOR KPI CARDS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-blue-500/50 transition-colors">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                 <Thermometer size={64} className="text-blue-500" />
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-blue-500/50 transition-all duration-500">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                 <Thermometer size={80} className="text-blue-500" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Thermometer size={16} className="text-blue-400"/> Temperature</h3>
-              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.temperature.toFixed(1)} <span className="text-lg text-slate-500">°C</span></p>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">Temperature</h3>
+              <p className="text-4xl font-black text-white mt-1">{latestReading.temperature.toFixed(1)} <span className="text-lg text-slate-600 font-light">°C</span></p>
+              <div className="mt-4 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${Math.min(latestReading.temperature * 1.5, 100)}%` }}></div>
+              </div>
             </div>
             
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-emerald-500/50 transition-colors">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                 <Gauge size={64} className="text-emerald-500" />
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-emerald-500/50 transition-all duration-500">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                 <Gauge size={80} className="text-emerald-500" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><Gauge size={16} className="text-emerald-400"/> Motor Current</h3>
-              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.current.toFixed(2)} <span className="text-lg text-slate-500">A</span></p>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">Motor Load</h3>
+              <p className="text-4xl font-black text-white mt-1">{latestReading.current.toFixed(2)} <span className="text-lg text-slate-600 font-light">A</span></p>
+              <div className="mt-4 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${Math.min(latestReading.current * 10, 100)}%` }}></div>
+              </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:border-amber-500/50 transition-colors">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                 <VibrateIcon size={64} className="text-amber-500" />
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-amber-500/50 transition-all duration-500">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                 <VibrateIcon size={80} className="text-amber-500" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2"><VibrateIcon size={16} className="text-amber-400"/> Vibration</h3>
-              <p className="text-4xl font-light text-slate-100 mt-2">{latestReading.vibration.toFixed(2)} <span className="text-lg text-slate-500">mm/s</span></p>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">Vibration</h3>
+              <p className="text-4xl font-black text-white mt-1">{latestReading.vibration.toFixed(2)} <span className="text-lg text-slate-600 font-light">mm/s</span></p>
+              <div className="mt-4 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-amber-500 transition-all duration-1000" style={{ width: `${Math.min(latestReading.vibration * 20, 100)}%` }}></div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 pointer-events-none translate-x-1/2 -translate-y-1/2"></div>
-            <div className="flex justify-between items-center mb-6 z-10 relative">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-100">
-                <Activity className="text-indigo-400" /> Live Sensor Telemetry Timeline
-              </h2>
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex-1">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 rounded-full blur-[120px] -z-10 pointer-events-none translate-x-1/3 -translate-y-1/3"></div>
+            <div className="flex justify-between items-center mb-8 relative">
+              <div>
+                <h2 className="text-2xl font-black flex items-center gap-3 text-white">
+                  <Activity className="text-blue-500" /> Deep Telemetry Stream
+                </h2>
+                <p className="text-slate-500 text-sm mt-1 font-medium italic">High-frequency sensor fusion monitoring</p>
+              </div>
               <button
                 onClick={toggleSimulation}
-                className={`px-4 py-2 rounded-lg font-bold text-sm tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg ${isSimulating ? 'bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500/30' : 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/30'}`}
+                className={`px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-500 flex items-center gap-3 shadow-2xl ${isSimulating ? 'bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/20'}`}
               >
-                {isSimulating ? <Square size={14} /> : <Play size={14} />}
-                {isSimulating ? "Stop Simulator" : "Start Simulator"}
+                {isSimulating ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+                {isSimulating ? "Terminate Stream" : "Establish Stream"}
               </button>
             </div>
-            <div className="h-[300px] w-full relative">
+            <div className="h-[400px] w-full relative">
               {isMounted && (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={filteredTelemetry} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <LineChart data={filteredTelemetry} margin={{ top: 5, right: 30, bottom: 5, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                    <XAxis dataKey="time" stroke="#475569" tick={{fill: '#94a3b8'}} />
-                    <YAxis stroke="#475569" tick={{fill: '#94a3b8'}} />
+                    <XAxis dataKey="time" stroke="#475569" tick={{fill: '#475569', fontSize: 10, fontWeight: 700}} />
+                    <YAxis stroke="#475569" tick={{fill: '#475569', fontSize: 10, fontWeight: 700}} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }}
-                      itemStyle={{ color: '#e2e8f0' }}
+                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
                     />
-                    <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} name="Temp (°C)" />
-                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} dot={false} name="Current (A)" />
-                    <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} name="Vibration (mm/s)" />
+                    <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={4} dot={false} name="Temp" animationDuration={300} />
+                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={4} dot={false} name="Load" animationDuration={300} />
+                    <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={4} dot={false} name="Vibr" animationDuration={300} />
                   </LineChart>
                 </ResponsiveContainer>
               )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-4">Anomaly Engine</h3>
-               <div className="flex justify-between items-end">
-                  <div>
-                    <p className="text-4xl font-light text-slate-100">{anomalyScore.toFixed(3)}</p>
-                    <p className="text-sm text-slate-500 mt-1">Reconstruction MSE</p>
-                  </div>
-                  <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 shadow-inner">
-                    <ShieldCheck size={24} />
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl flex justify-between items-center group hover:border-blue-500/30 transition-colors">
+               <div>
+                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Anomaly Baseline</h3>
+                 <p className="text-4xl font-black text-white">{anomalyScore.toFixed(4)}</p>
+                 <p className="text-[10px] text-slate-600 mt-1 uppercase font-bold tracking-tighter italic">Reconstruction Variance (MSE)</p>
+               </div>
+               <div className="h-16 w-16 rounded-3xl bg-blue-500/10 flex items-center justify-center text-blue-500 shadow-inner group-hover:scale-110 transition-transform">
+                 <ShieldCheck size={32} />
                </div>
             </div>
 
-            {/* RAG DOCUMENT PIPELINE */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between relative">
-               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                 <UploadCloud size={16} className="text-indigo-400"/> RAG Knowledge Ingestion
-               </h3>
-               
-               <div className="space-y-3 relative z-10">
-                 <input 
-                   type="text" 
-                   value={manualId}
-                   onChange={(e) => setManualId(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
-                   placeholder="Manual ID (e.g. Pump_Manual_v1)" 
-                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                   disabled={isUploading}
-                 />
-                 
-                 <div className="flex gap-2 items-center">
-                   <label className="flex-1 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 cursor-pointer border border-slate-700 rounded-lg py-2 px-4 transition-colors text-sm font-semibold">
-                     <FileText size={16} />
-                     <span className="truncate max-w-[120px]">{uploadFile ? uploadFile.name : "Select PDF Document"}</span>
-                     <input 
-                       type="file" 
-                       accept="application/pdf" 
-                       className="hidden" 
-                       onChange={(e) => setUploadFile(e.target.files ? e.target.files[0] : null)}
-                       disabled={isUploading}
-                     />
-                   </label>
-                   <button 
-                     onClick={handleUpload}
-                     disabled={!uploadFile || !manualId || isUploading}
-                     className="bg-indigo-600 disabled:bg-slate-800 disabled:text-slate-500 hover:bg-indigo-500 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/20"
-                   >
-                     {isUploading ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
-                     Upload
-                   </button>
-                 </div>
-                 {uploadStatus && (
-                   <p className={`text-xs font-semibold flex items-center gap-1 ${uploadStatus.includes('Successful') ? 'text-emerald-400' : uploadStatus.includes('Error') ? 'text-red-400' : 'text-blue-400'}`}>
-                     {uploadStatus.includes('Successful') ? <CheckCircle size={14} /> : uploadStatus.includes('Error') ? <AlertTriangle size={14} /> : <Loader2 size={14} className="animate-spin"/>}
-                     {uploadStatus}
-                   </p>
-                 )}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl flex flex-col justify-center">
+               <div className="flex items-center gap-4">
+                 <div className="h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Neural Health Certified</span>
                </div>
+               <p className="text-slate-500 text-xs mt-3 leading-relaxed font-medium">Autoencoder weights synchronized for <span className="text-blue-400">{currentMachineId}</span>. Thresholds active.</p>
             </div>
           </div>
         </div>
+
 
         {/* Right Column: AI Interaction */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative h-[calc(100vh-140px)]">
