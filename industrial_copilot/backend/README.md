@@ -26,10 +26,16 @@ Ensure your backend environment is active (using `.venv`) and follow these steps
 ### 1. Start the Backend API
 The FastAPI backend handles anomaly detection, telemetry streaming, and RAG orchestration.
 
-```bash
-# From the industrial_copilot/backend folder
-.\.venv\Scripts\Activate.ps1     
+# 1. Create the virtual environment
+python -m venv .venv
 
+# 2. Activate the virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# 3. Install the required packages
+pip install -r requirements.txt
+  
+# 4. Run backend API
 uvicorn api.main_api:app
 ```
 *Access API Docs at: http://localhost:8000/docs*
