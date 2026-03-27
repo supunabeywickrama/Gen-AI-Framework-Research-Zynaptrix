@@ -26,7 +26,8 @@ export interface AnomalyRecord {
 
 interface CopilotState {
   telemetry: TelemetryPoint[];
-  chatHistory: ChatMessage[];
+  // Keyed by anomaly ID (string) or 'general'
+  chatHistory: Record<string, ChatMessage[]>;
   anomalyHistory: AnomalyRecord[];
   activeAnomaly: AnomalyRecord | null;
   systemState: 'NORMAL' | 'ANOMALY';
@@ -36,9 +37,11 @@ interface CopilotState {
 
 const initialState: CopilotState = {
   telemetry: [],
-  chatHistory: [
-    { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring multi-machine factory floor.' }
-  ],
+  chatHistory: {
+    'general': [
+      { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring multi-machine factory floor.' }
+    ]
+  },
   anomalyHistory: [],
   activeAnomaly: null,
   systemState: 'NORMAL',
@@ -60,11 +63,22 @@ export const fetchAnomalyHistory = createAsyncThunk(
 export const inquireCopilot = createAsyncThunk(
   'copilot/inquire',
   async (payload: { machine_id: string; query: string; machine_state: string; context_anomaly?: AnomalyRecord }, { dispatch }) => {
+    const targetId = payload.context_anomaly?.id.toString();
+    
     // Add user message first
-    dispatch(addChatMessage({ role: 'user', content: payload.query, machineId: payload.machine_id }));
+    dispatch(addChatMessage({ 
+        role: 'user', 
+        content: payload.query, 
+        machineId: payload.machine_id,
+        targetId 
+    }));
     
     // Add a placeholder agent message
-    dispatch(addChatMessage({ role: 'agent', content: 'Analyzing incident context...' }));
+    dispatch(addChatMessage({ 
+        role: 'agent', 
+        content: 'Analyzing incident context...',
+        targetId
+    }));
 
     // Enhance payload with anomaly context if provided
     const body = {
@@ -95,8 +109,13 @@ const copilotSlice = createSlice({
       state.telemetry.push(action.payload);
       if (state.telemetry.length > 20) state.telemetry.shift();
     },
-    addChatMessage(state, action: PayloadAction<ChatMessage>) {
-      state.chatHistory.push(action.payload);
+    addChatMessage(state, action: PayloadAction<ChatMessage & { targetId?: string }>) {
+      const { targetId, ...msg } = action.payload;
+      const key = targetId || 'general';
+      if (!state.chatHistory[key]) {
+        state.chatHistory[key] = [];
+      }
+      state.chatHistory[key].push(msg);
     },
     addAnomalyToHistory(state, action: PayloadAction<AnomalyRecord>) {
       state.anomalyHistory.unshift(action.payload);
@@ -104,6 +123,12 @@ const copilotSlice = createSlice({
     },
     setActiveAnomaly(state, action: PayloadAction<AnomalyRecord | null>) {
       state.activeAnomaly = action.payload;
+      // Initialize chat for this anomaly if it doesn't exist
+      if (action.payload && !state.chatHistory[action.payload.id.toString()]) {
+        state.chatHistory[action.payload.id.toString()] = [
+            { role: 'agent', content: `🚨 Diagnostic session started for Incident #${action.payload.id}. Analysis of readings for ${action.payload.machine_id} is ready.` }
+        ];
+      }
     },
     setSystemState(state, action: PayloadAction<'NORMAL' | 'ANOMALY'>) {
       state.systemState = action.payload;
@@ -120,18 +145,26 @@ const copilotSlice = createSlice({
       state.anomalyHistory = action.payload;
     });
     builder.addCase(inquireCopilot.fulfilled, (state, action) => {
-      const lastIdx = state.chatHistory.length - 1;
-      const result = action.payload.graph_result;
-      state.chatHistory[lastIdx] = {
-        role: 'agent',
-        content: result.final_execution_plan,
-        images: result.retrieved_images,
-        machineId: action.meta.arg.machine_id
-      };
+      const targetId = action.meta.arg.context_anomaly?.id.toString() || 'general';
+      const history = state.chatHistory[targetId];
+      if (history && history.length > 0) {
+        const lastIdx = history.length - 1;
+        const result = action.payload.graph_result;
+        history[lastIdx] = {
+            role: 'agent',
+            content: result.final_execution_plan,
+            images: result.retrieved_images,
+            machineId: action.meta.arg.machine_id
+        };
+      }
     });
-    builder.addCase(inquireCopilot.rejected, (state) => {
-       const lastIdx = state.chatHistory.length - 1;
-       state.chatHistory[lastIdx].content = "⚠️ Error communicating with Copilot backend.";
+    builder.addCase(inquireCopilot.rejected, (state, action) => {
+       const targetId = action.meta.arg.context_anomaly?.id.toString() || 'general';
+       const history = state.chatHistory[targetId];
+       if (history && history.length > 0) {
+         const lastIdx = history.length - 1;
+         history[lastIdx].content = "⚠️ Error communicating with Copilot backend.";
+       }
     });
   }
 });

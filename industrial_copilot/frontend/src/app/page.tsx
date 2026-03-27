@@ -328,7 +328,7 @@ export default function IndustrialCopilotDashboard() {
 
              {/* Modal Chat Body */}
              <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] scrollbar-thin scrollbar-thumb-slate-700">
-                {chatHistory.map((msg, i) => (
+                {(chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, i) => (
                     <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[85%] p-6 rounded-3xl shadow-2xl ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'}`}>
                             <div className="text-sm leading-relaxed space-y-4 markdown-content">
