@@ -15,9 +15,20 @@ export interface ChatMessage {
   machineId?: string;
 }
 
+export interface AnomalyRecord {
+  id: number;
+  machine_id: string;
+  timestamp: string;
+  type: string;
+  score: number;
+  sensor_data: string;
+}
+
 interface CopilotState {
   telemetry: TelemetryPoint[];
   chatHistory: ChatMessage[];
+  anomalyHistory: AnomalyRecord[];
+  activeAnomaly: AnomalyRecord | null;
   systemState: 'NORMAL' | 'ANOMALY';
   anomalyScore: number;
   activeAgents: string[];
@@ -28,6 +39,8 @@ const initialState: CopilotState = {
   chatHistory: [
     { role: 'agent', content: '🏭 Industrial Copilot initialized. Monitoring multi-machine factory floor.' }
   ],
+  anomalyHistory: [],
+  activeAnomaly: null,
   systemState: 'NORMAL',
   anomalyScore: 0.001,
   activeAgents: ['Sensor', 'Diagnostic', 'Strategy', 'Critic', 'RAG'],
@@ -35,20 +48,37 @@ const initialState: CopilotState = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+export const fetchAnomalyHistory = createAsyncThunk(
+  'copilot/fetchAnomalies',
+  async (machineId: string) => {
+    const response = await fetch(`${API_BASE}/api/machines/${machineId}/anomalies`);
+    if (!response.ok) throw new Error('Failed to fetch anomaly history');
+    return await response.json();
+  }
+);
+
 export const inquireCopilot = createAsyncThunk(
   'copilot/inquire',
-  async (payload: { machine_id: string; query: string; machine_state: string }, { dispatch }) => {
+  async (payload: { machine_id: string; query: string; machine_state: string; context_anomaly?: AnomalyRecord }, { dispatch }) => {
     // Add user message first
     dispatch(addChatMessage({ role: 'user', content: payload.query, machineId: payload.machine_id }));
     
     // Add a placeholder agent message
-    dispatch(addChatMessage({ role: 'agent', content: 'Thinking...' }));
-    const msgId = 1111; // We'd need a real ID system for updates, using index for now
+    dispatch(addChatMessage({ role: 'agent', content: 'Analyzing incident context...' }));
+
+    // Enhance payload with anomaly context if provided
+    const body = {
+        machine_id: payload.machine_id,
+        user_query: payload.query,
+        machine_state: payload.machine_state,
+        recent_readings: payload.context_anomaly ? JSON.parse(payload.context_anomaly.sensor_data) : {},
+        suspect_sensor: "Operator-Triggered Context"
+    };
 
     const response = await fetch(`${API_BASE}/api/copilot/invoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) throw new Error('Copilot inquiry failed');
@@ -68,13 +98,12 @@ const copilotSlice = createSlice({
     addChatMessage(state, action: PayloadAction<ChatMessage>) {
       state.chatHistory.push(action.payload);
     },
-    updateChatMessage(state, action: PayloadAction<{ index: number; content: string; images?: string[] }>) {
-      if (state.chatHistory[action.payload.index]) {
-        state.chatHistory[action.payload.index].content = action.payload.content;
-        if (action.payload.images) {
-          state.chatHistory[action.payload.index].images = action.payload.images;
-        }
-      }
+    addAnomalyToHistory(state, action: PayloadAction<AnomalyRecord>) {
+      state.anomalyHistory.unshift(action.payload);
+      if (state.anomalyHistory.length > 50) state.anomalyHistory.pop();
+    },
+    setActiveAnomaly(state, action: PayloadAction<AnomalyRecord | null>) {
+      state.activeAnomaly = action.payload;
     },
     setSystemState(state, action: PayloadAction<'NORMAL' | 'ANOMALY'>) {
       state.systemState = action.payload;
@@ -87,6 +116,9 @@ const copilotSlice = createSlice({
     }
   },
   extraReducers: (builder) => {
+    builder.addCase(fetchAnomalyHistory.fulfilled, (state, action) => {
+      state.anomalyHistory = action.payload;
+    });
     builder.addCase(inquireCopilot.fulfilled, (state, action) => {
       const lastIdx = state.chatHistory.length - 1;
       const result = action.payload.graph_result;
@@ -107,7 +139,8 @@ const copilotSlice = createSlice({
 export const { 
   addTelemetry, 
   addChatMessage, 
-  updateChatMessage,
+  addAnomalyToHistory,
+  setActiveAnomaly,
   setSystemState, 
   setAnomalyScore,
   setActiveAgents
