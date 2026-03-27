@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from unified_rag.db.database import SessionLocal
-from unified_rag.db.models import Machine
+from unified_rag.db.models import Machine, AnomalyRecord
 from pydantic import BaseModel
+import json
 
 router = APIRouter(tags=["Machine Registry"])
 
@@ -26,9 +27,25 @@ class MachineResponse(MachineBase):
     class Config:
         from_attributes = True
 
+class AnomalyResponse(BaseModel):
+    id: int
+    machine_id: str
+    timestamp: str
+    type: str
+    score: int
+    sensor_data: str # JSON backend
+
+    class Config:
+        from_attributes = True
+
 @router.get("/api/machines", response_model=List[MachineResponse])
 async def list_machines(db: Session = Depends(get_db)):
     return db.query(Machine).all()
+
+@router.get("/api/machines/{machine_id}/anomalies", response_model=List[AnomalyResponse])
+async def get_machine_anomalies(machine_id: str, db: Session = Depends(get_db)):
+    """Fetch history of anomalies for a specific machine."""
+    return db.query(AnomalyRecord).filter(AnomalyRecord.machine_id == machine_id).order_by(AnomalyRecord.id.desc()).all()
 
 @router.post("/api/machines", response_model=MachineResponse)
 async def register_machine(machine: dict, db: Session = Depends(get_db)):

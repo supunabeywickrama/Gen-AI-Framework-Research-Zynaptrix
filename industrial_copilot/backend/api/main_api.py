@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 import asyncio
 import json
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables early
@@ -14,7 +15,8 @@ load_dotenv()
 
 from agents.copilot_graph import build_copilot_graph
 from unified_rag.api.endpoints import router as rag_router
-from unified_rag.db.database import engine, Base
+from unified_rag.db.models import Machine, AnomalyRecord
+from unified_rag.db.database import engine, Base, SessionLocal
 from sqlalchemy import text
 from services.anomaly_service import AnomalyService
 
@@ -80,18 +82,20 @@ telemetry_manager = TelemetryClientManager()
 
 class AnomalyEvent(BaseModel):
     machine_id: str = "PUMP-001"
-    machine_state: str
-    anomaly_score: float
+    machine_state: str = "manual_inquiry"
+    anomaly_score: Optional[float] = 0.0
+    user_query: Optional[str] = None
     suspect_sensor: Optional[str] = "Unknown"
     recent_readings: Optional[Dict[str, Any]] = None
 
 @app.post("/api/copilot/invoke")
 async def invoke_copilot(event: AnomalyEvent):
     initial_state = {
-        "event_id": "EVT-LIVE-ALERT",
+        "event_id": "EVT-LIVE-QUERY",
         "machine_id": event.machine_id,
         "machine_state": event.machine_state,
         "anomaly_score": event.anomaly_score,
+        "user_query": event.user_query,
         "suspect_sensor": event.suspect_sensor,
         "recent_readings": event.recent_readings or {},
     }
@@ -115,32 +119,44 @@ async def async_broadcast_anomaly(result):
         "data": result
     }))
 
-def trigger_orchestrator(alert_data):
-    initial_state = {
-        "event_id": "EVT-CRITICAL-ALERT",
-        "machine_id": alert_data.get("machine_id", "PUMP-001"),
-        "machine_state": alert_data["machine_state"],
-        "anomaly_score": alert_data["anomaly_score"],
-        "suspect_sensor": alert_data["suspect_sensor"],
-        "recent_readings": alert_data["recent_readings"],
-    }
-    result = copilot_workflow.invoke(initial_state)
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(async_broadcast_anomaly(result))
-    except RuntimeError:
-        asyncio.run(async_broadcast_anomaly(result))
-
 def on_anomaly_callback(alert: dict):
     state = "machine_fault" if alert.get("severity") == "HIGH" else "machine_warning"
-    full_alert_data = {
-        "machine_id": alert.get("machine_id", "PUMP-001"),
-        "machine_state": state,
-        "anomaly_score": alert.get("reconstruction_score", 0.0),
-        "suspect_sensor": alert.get("suspect_sensor"),
-        "recent_readings": alert.get("sensor_readings", {})
-    }
-    trigger_orchestrator(full_alert_data)
+    machine_id = alert.get("machine_id", "PUMP-001")
+    
+    # HITL: Persist the incident instead of auto-invoking the agent
+    db = SessionLocal()
+    try:
+        record = AnomalyRecord(
+            machine_id=machine_id,
+            timestamp=alert.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            type=state,
+            score=int(alert.get("reconstruction_score", 0.1) * 100), # Scale to 0-100 for UI
+            sensor_data=json.dumps(alert.get("sensor_readings", {}))
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        
+        # Broadcast the minimal alert to update the UI Archive
+        full_alert_data = {
+            "id": record.id,
+            "machine_id": machine_id,
+            "machine_state": state,
+            "anomaly_score": alert.get("reconstruction_score", 0.1),
+            "suspect_sensor": alert.get("suspect_sensor"),
+            "recent_readings": alert.get("sensor_readings", {})
+        }
+        
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(async_broadcast_anomaly(full_alert_data))
+        except RuntimeError:
+            asyncio.run(async_broadcast_anomaly(full_alert_data))
+            
+    except Exception as e:
+        logging.error(f"Failed to persist anomaly: {e}")
+    finally:
+        db.close()
 
 # Registry of stateful trackers (isolates consecutive counts per machine)
 anomaly_trackers: Dict[str, AnomalyService] = {}

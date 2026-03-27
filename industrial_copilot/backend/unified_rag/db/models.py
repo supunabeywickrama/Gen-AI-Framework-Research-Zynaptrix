@@ -21,3 +21,13 @@ class Machine(Base):
     name = Column(String, nullable=False)
     location = Column(String, nullable=True)
     manual_id = Column(String, nullable=False) # Maps to ManualChunk.manual_id
+
+class AnomalyRecord(Base):
+    __tablename__ = "anomaly_records"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    machine_id = Column(String, index=True, nullable=False)
+    timestamp = Column(String, nullable=False)
+    type = Column(String, nullable=False) # e.g. 'PUMP_FAULT'
+    score = Column(Integer, nullable=False) # Normalized 0-100 or MSE
+    sensor_data = Column(Text, nullable=True) # JSON string of readings at time of incident

@@ -1,10 +1,37 @@
 "use client"
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, AlertTriangle, ShieldCheck, Server, MessageSquare, Send, Thermometer, Gauge, Activity as VibrateIcon, UploadCloud, FileText, CheckCircle, Loader2, Play, Square } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { 
+  Activity, 
+  AlertTriangle, 
+  CheckCircle, 
+  ChevronRight, 
+  Database, 
+  Gauge, 
+  MessageSquare, 
+  Play, 
+  Send, 
+  Server, 
+  ShieldCheck, 
+  Square, 
+  Thermometer, 
+  Vibrate as VibrateIcon,
+  ArrowRight
+} from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
-import { addChatMessage, addTelemetry, setSystemState, setAnomalyScore, inquireCopilot } from '../store/slices/copilotSlice';
+import { 
+  addTelemetry, 
+  addChatMessage, 
+  addAnomalyToHistory,
+  setActiveAnomaly,
+  setSystemState, 
+  setAnomalyScore,
+  fetchAnomalyHistory,
+  inquireCopilot
+} from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
 
@@ -12,11 +39,13 @@ export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
   
   // Redux-driven State
-  const { telemetry, chatHistory, systemState, anomalyScore } = useSelector((state: RootState) => state.copilot);
-  const { machines, currentMachineId, loading: machinesLoading } = useSelector((state: RootState) => state.machines);
+  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore } = useSelector((state: RootState) => state.copilot);
+  const { machines, currentMachineId } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
-// Local transient UI states
+  
+  // Local transient UI states
   const [query, setQuery] = useState('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Filter telemetry points for the current machine
@@ -28,16 +57,19 @@ export default function IndustrialCopilotDashboard() {
 
   useEffect(() => {
     setIsMounted(true);
-    // Initial Bootstrap
     dispatch(fetchMachines());
     dispatch(fetchSimulatorStatus());
   }, [dispatch]);
 
-  // WebSocket Telemetry Stream (Centralized Dispatcher)
+  useEffect(() => {
+    if (currentMachineId) {
+      dispatch(fetchAnomalyHistory(currentMachineId));
+    }
+  }, [currentMachineId, dispatch]);
+
+  // WebSocket Telemetry Stream
   useEffect(() => {
     let ws: WebSocket;
-    let reconnectTimer: NodeJS.Timeout;
-
     const connectWS = () => {
       const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const wsUrl = base.replace('http', 'ws');
@@ -46,7 +78,6 @@ export default function IndustrialCopilotDashboard() {
       ws.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
-          
           if (parsed.type === "telemetry") {
             const data = parsed.data;
             dispatch(addTelemetry({
@@ -60,75 +91,71 @@ export default function IndustrialCopilotDashboard() {
             const result = parsed.data;
             dispatch(setSystemState('ANOMALY'));
             dispatch(setAnomalyScore(result.anomaly_score || 0.99));
-            
-            dispatch(addChatMessage({ 
-              role: 'agent', 
-              content: result.final_execution_plan || "Critical Anomaly Detected.",
-              images: result.retrieved_images || [],
-              machineId: result.machine_id
+            dispatch(addAnomalyToHistory({
+                id: result.id,
+                machine_id: result.machine_id,
+                timestamp: new Date().toLocaleTimeString(),
+                type: result.machine_state,
+                score: Math.round(result.anomaly_score * 100),
+                sensor_data: JSON.stringify(result.recent_readings || {})
             }));
           }
-        } catch (err) {
-          console.error("Telemetry parsing error:", err);
-        }
+        } catch (err) { console.error(err); }
       };
-
-      ws.onclose = () => {
-        reconnectTimer = setTimeout(connectWS, 3000);
-      };
-      
-      ws.onerror = () => {
-        ws.close();
-      };
+      ws.onclose = () => setTimeout(connectWS, 3000);
     };
-
     connectWS();
-
-    return () => {
-      clearTimeout(reconnectTimer);
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-      }
-    };
+    return () => ws?.close();
   }, [dispatch]);
 
-  // UI Helpers
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory]);
+  }, [chatHistory, isChatOpen]);
 
-  // Thunk-based Interactions
-  const handleManualInquiry = () => {
-    if (!query) return;
+  const handleManualInquiry = (customQuery?: string) => {
+    const finalQuery = customQuery || query;
+    if (!finalQuery) return;
     dispatch(inquireCopilot({
       machine_id: currentMachineId,
-      query,
-      machine_state: systemState === "NORMAL" ? "manual_inquiry_normal" : "anomaly_investigation",
+      query: finalQuery,
+      machine_state: activeAnomaly ? activeAnomaly.type : "manual_inquiry_general",
+      context_anomaly: activeAnomaly || undefined
     }));
     setQuery('');
   };
 
   const toggleSimulation = async () => {
-    if (isSimulating) {
-      await dispatch(stopSimulator(currentMachineId));
-    } else {
-      await dispatch(startSimulator(currentMachineId));
-    }
-    // Refresh global status after toggle
+    if (isSimulating) await dispatch(stopSimulator(currentMachineId));
+    else await dispatch(startSimulator(currentMachineId));
     dispatch(fetchSimulatorStatus());
   };
 
+  const diagnosticSuggestions = [
+    "Likely causes for this fault?",
+    "Technical repair checklist",
+    "Check signal-line integrity",
+    "Analyze ADC voltage drift",
+    "Inspect terminals for oxidation"
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-x-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col">
+      
+      {/* Header */}
       <header className="flex justify-between items-center mb-8 border-b border-slate-800 pb-6 bg-slate-900/40 backdrop-blur-md shadow-xl rounded-2xl p-6">
         <div>
           <h1 className="text-3xl font-black bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent flex items-center gap-3">
             <Server className="text-blue-500" />
-            Factory Fleet Control Room
+            Industrial Copilot Hub
           </h1>
-          <p className="text-slate-400 text-sm mt-1 font-semibold tracking-wide uppercase opacity-70">Autonomous Multi-Agent Orchestration</p>
+          <div className="flex items-center gap-2 mt-1">
+             <div className={`h-2 w-2 rounded-full ${isSimulating ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`}></div>
+             <p className="text-slate-400 text-[10px] font-bold tracking-widest uppercase opacity-70">
+               {isSimulating ? 'Live Telemetry Active' : 'Simulator Standby'}
+             </p>
+          </div>
         </div>
+
         <div className="flex items-center gap-6">
           <div className="flex bg-slate-800/50 rounded-xl p-1 border border-slate-700/50">
             {machines.map(m => (
@@ -141,227 +168,214 @@ export default function IndustrialCopilotDashboard() {
               </button>
             ))}
           </div>
-          <div className={`px-5 py-2 rounded-full border shadow-lg flex items-center gap-2 font-black tracking-widest text-xs ${
-            systemState === 'NORMAL' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'
-          }`}>
-            {systemState === 'NORMAL' ? <ShieldCheck size={16} /> : <AlertTriangle size={16} />}
-            {systemState}
-          </div>
+          <button
+              onClick={toggleSimulation}
+              className={`px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 shadow-2xl ${isSimulating ? 'bg-red-500/10 text-red-500 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30'}`}
+            >
+              {isSimulating ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+              {isSimulating ? "Stop" : "Start"}
+          </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-8 pb-10">
+      {/* Main Grid: Left (Sensor Lines) | Right (Detected Anomalies) */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 flex-1 overflow-hidden">
         
-        {/* Left Column: Telemetry & Models (3/5 width) */}
-        <div className="xl:col-span-3 flex flex-col gap-8">
+        {/* Left Aspect: Sensor Telemetry (2/3 width) */}
+        <div className="xl:col-span-2 flex flex-col gap-6 overflow-hidden">
           
-          {/* SENSOR KPI CARDS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-blue-500/50 transition-all duration-500">
-              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                 <Thermometer size={80} className="text-blue-500" />
-              </div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">Temperature</h3>
-              <p className="text-4xl font-black text-white mt-1">{latestReading.temperature.toFixed(1)} <span className="text-lg text-slate-600 font-light">°C</span></p>
-              <div className="mt-4 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${Math.min(latestReading.temperature * 1.5, 100)}%` }}></div>
-              </div>
-            </div>
-            
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-emerald-500/50 transition-all duration-500">
-              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                 <Gauge size={80} className="text-emerald-500" />
-              </div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">Motor Load</h3>
-              <p className="text-4xl font-black text-white mt-1">{latestReading.current.toFixed(2)} <span className="text-lg text-slate-600 font-light">A</span></p>
-              <div className="mt-4 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${Math.min(latestReading.current * 10, 100)}%` }}></div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-amber-500/50 transition-all duration-500">
-              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                 <VibrateIcon size={80} className="text-amber-500" />
-              </div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">Vibration</h3>
-              <p className="text-4xl font-black text-white mt-1">{latestReading.vibration.toFixed(2)} <span className="text-lg text-slate-600 font-light">mm/s</span></p>
-              <div className="mt-4 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-500 transition-all duration-1000" style={{ width: `${Math.min(latestReading.vibration * 20, 100)}%` }}></div>
-              </div>
-            </div>
+          <div className="grid grid-cols-3 gap-4">
+             {[
+               { label: 'Temperature', val: latestReading.temperature.toFixed(1), unit: '°C', color: 'blue', icon: Thermometer },
+               { label: 'Motor Load', val: latestReading.current.toFixed(2), unit: 'A', color: 'emerald', icon: Gauge },
+               { label: 'Vibration', val: latestReading.vibration.toFixed(2), unit: 'mm/s', color: 'amber', icon: VibrateIcon },
+             ].map((kpi, i) => (
+               <div key={i} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
+                  <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${kpi.color}-500`}>
+                     <kpi.icon size={60} />
+                  </div>
+                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{kpi.label}</h3>
+                  <p className="text-3xl font-black text-white">{kpi.val} <span className="text-sm text-slate-600 font-light">{kpi.unit}</span></p>
+               </div>
+             ))}
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[450px]">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 rounded-full blur-[120px] -z-10 pointer-events-none translate-x-1/3 -translate-y-1/3"></div>
-            <div className="flex justify-between items-center mb-8 relative">
-              <div>
-                <h2 className="text-2xl font-black flex items-center gap-3 text-white">
-                  <Activity className="text-blue-500" /> Deep Telemetry Stream
-                </h2>
-                <p className="text-slate-500 text-sm mt-1 font-medium italic">High-frequency sensor fusion monitoring</p>
-              </div>
-              <button
-                onClick={toggleSimulation}
-                className={`px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all duration-500 flex items-center gap-3 shadow-2xl ${isSimulating ? 'bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/20'}`}
-              >
-                {isSimulating ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
-                {isSimulating ? "Terminate Stream" : "Establish Stream"}
-              </button>
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex-1 flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+               <h2 className="text-xl font-black flex items-center gap-3 text-white">
+                 <Activity className="text-blue-500" /> Real-Time Sensor Stream
+               </h2>
+               <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500">
+                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-blue-500 rounded"></div> Temp</span>
+                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-emerald-500 rounded"></div> Load</span>
+                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-amber-500 rounded"></div> Vibr</span>
+               </div>
             </div>
-            <div className="h-[280px] w-full relative">
+            <div className="flex-1 w-full min-h-[300px]">
               {isMounted && (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={filteredTelemetry} margin={{ top: 5, right: 30, bottom: 5, left: 0 }}>
+                  <LineChart data={filteredTelemetry}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                    <XAxis dataKey="time" stroke="#475569" tick={{fill: '#475569', fontSize: 10, fontWeight: 700}} />
+                    <XAxis dataKey="time" stroke="#475569" tick={{fill: '#475569', fontSize: 10, fontWeight: 700}} hide />
                     <YAxis stroke="#475569" tick={{fill: '#475569', fontSize: 10, fontWeight: 700}} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                      itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                      contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
                     />
-                    <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={4} dot={false} name="Temp" animationDuration={300} />
-                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={4} dot={false} name="Load" animationDuration={300} />
-                    <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={4} dot={false} name="Vibr" animationDuration={300} />
+                    <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} animationDuration={300} />
+                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} dot={false} animationDuration={300} />
+                    <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} animationDuration={300} />
                   </LineChart>
                 </ResponsiveContainer>
               )}
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl flex justify-between items-center group hover:border-blue-500/30 transition-colors">
-               <div>
-                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Anomaly Baseline</h3>
-                 <p className="text-4xl font-black text-white">{anomalyScore.toFixed(4)}</p>
-                 <p className="text-[10px] text-slate-600 mt-1 uppercase font-bold tracking-tighter italic">Reconstruction Variance (MSE)</p>
-               </div>
-               <div className="h-16 w-16 rounded-3xl bg-blue-500/10 flex items-center justify-center text-blue-500 shadow-inner group-hover:scale-110 transition-transform">
-                 <ShieldCheck size={32} />
-               </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl flex flex-col justify-center">
-               <div className="flex items-center gap-4">
-                 <div className="h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Neural Health Certified</span>
-               </div>
-               <p className="text-slate-500 text-xs mt-3 leading-relaxed font-medium">Autoencoder weights synchronized for <span className="text-blue-400">{currentMachineId}</span>. Thresholds active.</p>
-            </div>
-          </div>
         </div>
 
-
-        {/* Right Column: AI Interaction (2/5 width) */}
-        <div className="xl:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden relative h-[calc(100vh-140px)]">
-          <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
-          <div className="p-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-10 flex justify-between items-center">
-            <h2 className="text-xl font-bold flex items-center gap-2 text-slate-100">
-              <MessageSquare className="text-blue-400" /> Diagnostic Intelligence
-            </h2>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-            {chatHistory.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[95%] rounded-3xl p-6 shadow-2xl ${
-                  msg.role === 'user' 
-                    ? 'bg-blue-600 text-white rounded-br-none' 
-                    : 'bg-slate-800/80 text-slate-100 border border-slate-700/50 rounded-bl-none leading-relaxed backdrop-blur-sm'}`}>
-                  
-                  {/* Human-readable interleaved content parser */}
-                  <div className="text-[15px] space-y-5">
-                    {msg.content.split(/(\[IMAGE[_\s-]?\d+\])/gi).map((part, partIdx) => {
-                      const imageMatch = part.match(/\[IMAGE[_\s-]?(\d+)\]/i);
-                      if (imageMatch && msg.images && msg.images[parseInt(imageMatch[1])]) {
-                        const imgIdx = parseInt(imageMatch[1]);
-                        return (
-                          <div key={partIdx} className="my-6 rounded-2xl overflow-hidden border border-slate-700 bg-slate-950/50 shadow-2xl group">
-                            <div className="bg-slate-800/80 px-4 py-2.5 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-700/50 flex justify-between items-center">
-                              <span>Technical Figure {imgIdx + 1}</span>
-                              <span className="text-blue-400 px-2 py-0.5 bg-blue-400/10 rounded">Source Found</span>
-                            </div>
-                            <img 
-                              src={msg.images[imgIdx]} 
-                              alt={`Diagnostic Figure ${imgIdx + 1}`}
-                              className="w-full h-auto max-h-[500px] object-contain hover:scale-[1.02] transition-transform duration-500"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                            />
-                          </div>
-                        );
-                      }
-                      return (
-                        <div key={partIdx} className="part-content">
-                          {part.split('\n').map((line, lineIdx) => {
-                            if (line.trim().startsWith('###')) {
-                              return <h3 key={lineIdx} className="text-xl font-black text-blue-400 mt-6 border-b border-blue-500/20 pb-2 mb-3">{line.replace('###', '').trim()}</h3>;
-                            }
-                            if (line.trim().startsWith('##')) {
-                              return <h2 key={lineIdx} className="text-2xl font-black text-white mt-8 mb-4 flex items-center gap-3">
-                                <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse"></div>
-                                {line.replace('##', '').trim()}
-                              </h2>;
-                            }
-                            if (line.includes('**')) {
-                              const segments = line.split(/(\*\*.*?\*\*)/g);
-                              return (
-                                <p key={lineIdx} className="whitespace-pre-wrap mb-4">
-                                  {segments.map((seg, segIdx) => {
-                                    if (seg.startsWith('**') && seg.endsWith('**')) {
-                                      return <strong key={segIdx} className="text-blue-300 font-black border-b border-blue-400/30">{seg.slice(2, -2)}</strong>;
-                                    }
-                                    return seg;
-                                  })}
-                                </p>
-                              );
-                            }
-                            return <p key={lineIdx} className="whitespace-pre-wrap mb-4 leading-loose">{line}</p>;
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Supplemental Images */}
-                  {msg.images && msg.images.length > 0 && !msg.content.match(/\[IMAGE[_\s-]?\d+\]/i) && (
-                    <div className="mt-6 pt-4 border-t border-slate-700/50 grid grid-cols-1 gap-4">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supplemental Records</p>
-                      {msg.images.map((imgUrl, imgIdx) => (
-                        <div key={imgIdx} className="rounded-xl overflow-hidden border border-slate-700 bg-slate-900/50">
-                          <img 
-                            src={imgUrl} 
-                            alt={`Retrieved Diagram ${imgIdx + 1}`}
-                            className="w-full h-auto max-h-64 object-contain"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+        {/* Right Aspect: Anomaly Archive (1/3 width) */}
+        <div className="flex flex-col gap-6 overflow-hidden">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col h-full overflow-hidden">
+            <h2 className="text-lg font-black text-white mb-6 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Database className="text-blue-400" size={20} /> Incident Registry
+              </span>
+              <div className={`px-3 py-1 rounded-full text-[10px] font-black border ${systemState === 'NORMAL' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-500'}`}>
+                {systemState}
               </div>
-            ))}
-            <div ref={chatEndRef} />
-          </div>
+            </h2>
 
-          <div className="p-4 bg-slate-900 border-t border-slate-800 z-10">
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                placeholder="Ask the Diagnostic Agent..."
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-slate-200"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleManualInquiry()}
-              />
-              <button 
-                onClick={handleManualInquiry}
-                className="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-xl transition-colors shadow-lg shadow-blue-500/20"
-              >
-                <Send size={18} />
-              </button>
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-800">
+               {anomalyHistory.length === 0 ? (
+                 <div className="h-full flex flex-col items-center justify-center opacity-20 py-20 text-center">
+                    <CheckCircle size={40} className="mb-4" />
+                    <p className="text-xs font-bold uppercase tracking-widest">No Anomalies Logged</p>
+                 </div>
+               ) : (
+                 anomalyHistory.map((item) => (
+                   <button
+                    key={item.id}
+                    onClick={() => {
+                        dispatch(setActiveAnomaly(item));
+                        setIsChatOpen(true);
+                    }}
+                    className={`w-full p-4 rounded-2xl border transition-all text-left relative group ${activeAnomaly?.id === item.id ? 'bg-blue-600/10 border-blue-500' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-900'}`}
+                   >
+                     <div className="flex justify-between items-start mb-2">
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-[0.1em] ${item.type.includes('fault') ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                           {item.type.replace('machine_', '')}
+                        </span>
+                        <span className="text-[9px] text-slate-500 font-mono italic">{item.timestamp}</span>
+                     </div>
+                     <p className="text-sm font-bold text-slate-200">Industrial Incident #{item.id}</p>
+                     <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-tighter">Variance Score: {item.score}%</p>
+                     <div className="absolute right-4 bottom-4 opacity-0 group-hover:opacity-100 transition-all text-blue-400">
+                        <ArrowRight size={16} />
+                     </div>
+                   </button>
+                 ))
+               )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Floating Chat Trigger */}
+      <button 
+        onClick={() => setIsChatOpen(true)}
+        className="fixed bottom-8 right-8 h-16 w-16 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-2xl shadow-blue-500/40 flex items-center justify-center transition-all hover:scale-110 active:scale-95 group z-40"
+      >
+        <MessageSquare size={24} className="group-hover:rotate-12 transition-transform" />
+        {activeAnomaly && (
+            <div className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full border-2 border-slate-950 flex items-center justify-center text-[10px] font-black">1</div>
+        )}
+      </button>
+
+      {/* Chat Modal / Pop-up */}
+      {isChatOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl h-[85vh] rounded-[2.5rem] shadow-4xl flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-500">
+             
+             {/* Modal Header */}
+             <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                <div>
+                   <h2 className="text-2xl font-black flex items-center gap-3 text-white">
+                      <ShieldCheck className="text-blue-500" /> Diagnostic Copilot
+                   </h2>
+                   {activeAnomaly ? (
+                     <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mt-1">Investigating Incident #{activeAnomaly.id}</p>
+                   ) : (
+                     <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">General Inquiry Mode</p>
+                   )}
+                </div>
+                <button 
+                    onClick={() => setIsChatOpen(false)}
+                    className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 hover:text-white transition-all"
+                >
+                    <Square size={20} />
+                </button>
+             </div>
+
+             {/* Modal Chat Body */}
+             <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] scrollbar-thin scrollbar-thumb-slate-700">
+                {chatHistory.map((msg, i) => (
+                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] p-6 rounded-3xl shadow-2xl ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'}`}>
+                            <div className="text-sm leading-relaxed space-y-4 markdown-content">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {msg.content
+                                        .replace(/\[SUGGESTION:.*?\]/gi, '') // Hide suggestions from main text
+                                        .replace(/\[IMAGE[_\s-]?(\d+)\]/gi, (match, id) => {
+                                            const url = msg.images?.[parseInt(id)];
+                                            return url ? `![Technical Diagram ${id}](${url})` : match;
+                                        })
+                                    }
+                                </ReactMarkdown>
+                                
+                                {/* Dynamic AI Follow-up Suggestions */}
+                                {msg.role === 'agent' && msg.content.includes('[SUGGESTION:') && (
+                                    <div className="mt-6 pt-4 border-t border-slate-700/50 flex flex-wrap gap-2">
+                                        {Array.from(msg.content.matchAll(/\[SUGGESTION:\s*(.*?)\]/gi)).map((match, si) => (
+                                            <button 
+                                                key={si} 
+                                                onClick={() => handleManualInquiry(match[1])}
+                                                className="text-[10px] uppercase font-black bg-blue-600/20 text-blue-400 px-3 py-1.5 rounded-lg border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all"
+                                            >
+                                                {match[1]}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                <div ref={chatEndRef} />
+             </div>
+
+             {/* Modal Footer */}
+             <div className="p-8 bg-slate-950/80 border-t border-slate-800 space-y-6">
+                <div className="flex flex-wrap gap-2">
+                    {diagnosticSuggestions.map((s, i) => (
+                        <button key={i} onClick={() => handleManualInquiry(s)} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-4 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all border border-slate-700">
+                            {s}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center gap-4">
+                    <input 
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200"
+                        placeholder="Type diagnostic query..."
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleManualInquiry()}
+                    />
+                    <button onClick={() => handleManualInquiry()} className="bg-blue-600 p-4 rounded-2xl hover:bg-blue-500 transition-all shadow-xl">
+                        <Send size={24} />
+                    </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

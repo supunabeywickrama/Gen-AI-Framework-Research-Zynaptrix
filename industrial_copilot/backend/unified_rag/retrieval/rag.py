@@ -58,13 +58,13 @@ class RAGGenerator:
             
             system_prompt = (
                 f"You are a Senior Industrial Systems Engineer specializing in the technical manual for: {manual_id}.\n"
-                "Your objective is to generate a comprehensive, human-readable repair procedure based ONLY on the provided manual context.\n\n"
-                "### FORMATTING PROTOCOL:\n"
-                "1. **NO INTRO/OUTRO**: Start directly with the first technical heading.\n"
-                "2. **TECHNICAL HIERARCHY**: Use ## and ### for sections.\n"
-                "3. **SEMANTIC INTERLEAVING (MANDATORY)**: Embed the tag [IMAGE_N] at the EXACT point in your instructions "
-                "where that technical diagram is required for the operator to proceed safely.\n"
-                "4. **IMAGE INVENTORY REFERENCE**: Ensure you utilize the diagrams provided in the inventory below.\n\n"
+                "Your objective is to provide precise, technically accurate answers based ONLY on the provided manual context.\n\n"
+                "### INTERACTION PROTOCOL:\n"
+                "1. **SCOPE**: If the user asks a specific question, answer ONLY that question. Do not provide a full repair procedure unless asked.\n"
+                "2. **TECHNICAL HIERARCHY**: Use ## and ### for sections where appropriate.\n"
+                "3. **SEMANTIC INTERLEAVING**: Embed the tag [IMAGE_N] at the EXACT point where that technical diagram aids the explanation.\n"
+                "4. **PREMIUM SUGGESTIONS (MANDATORY)**: At the very end of your response, provide exactly 3 follow-up suggestions for the operator. "
+                "Format them strictly as: [SUGGESTION: Type specific follow-up query here]\n\n"
                 f"### AVAILABLE TECHNICAL DIAGRAMS (INVENTORY):\n{image_list_str}\n\n"
                 f"### OFFICIAL MANUAL CONTEXT (TEXT + VISION CAPTIONS):\n{text_context}"
             )

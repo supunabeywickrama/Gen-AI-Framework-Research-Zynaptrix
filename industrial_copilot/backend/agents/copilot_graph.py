@@ -22,8 +22,9 @@ class CopilotState(TypedDict):
     machine_id: str
     machine_state: str
     anomaly_score: float
+    user_query: Optional[str]
     suspect_sensor: Optional[str]
-    recent_readings: Optional[Dict[str, float]]
+    recent_readings: Optional[Dict[str, Any]]
     
     # State accumulated across agents
     sensor_status_report: str
@@ -62,7 +63,13 @@ def knowledge_retrieval_node(state: CopilotState):
     """
     logger.info(f"🤖 [Agent] Knowledge Retrieval for Machine: {state.get('machine_id', 'Unknown')}")
     machine_id = state.get('machine_id', 'PUMP-001')
-    query = f"Provide repair instructions and troubleshooting steps for {state['machine_state']}."
+    
+    # HITL: Use the operator's specific query if available, otherwise default to a general fix
+    user_q = state.get('user_query')
+    if user_q and user_q.strip():
+        query = f"{user_q} (Context: {state['machine_state']} with readings {state.get('recent_readings')})"
+    else:
+        query = f"Provide repair instructions and troubleshooting steps for {state['machine_state']}."
     
     images = []
     if rag_gen:
@@ -120,14 +127,21 @@ def critic_node(state: CopilotState):
     logger.info("🤖 [Agent] Critic")
     feedback = f"Validation: Safety protocols verified against {state.get('machine_id', 'Asset')} Technical Documentation. Strategy approved for execution."
     
-    # Construction of the final Multimodal Payload
-    final_output = (
-        f"# 🚨 AI DIAGNOSTIC REPORT\n"
-        f"**Event ID**: {state['event_id']} | **Score**: {state['anomaly_score']:.2f}\n\n"
-        f"{state['strategy_report']}\n\n"
-        f"---\n"
-        f"**[Critic Sign-off]**: {feedback}"
-    )
+    # HITL: If this is a specific user query, provide a clean chat response.
+    # If it's an initial anomaly detection (no user query yet), provide the formal Report.
+    user_q = state.get('user_query')
+    if user_q and user_q.strip():
+        final_output = state['strategy_report']
+    else:
+        # Construction of the formal Multimodal Payload for initial alerts
+        final_output = (
+            f"# 🚨 AI DIAGNOSTIC REPORT\n"
+            f"**Event ID**: {state['event_id']} | **Score**: {state['anomaly_score']:.2f}\n\n"
+            f"{state['strategy_report']}\n\n"
+            f"---\n"
+            f"**[Critic Sign-off]**: {feedback}"
+        )
+        
     return {
         "critic_feedback": feedback,
         "final_execution_plan": final_output
