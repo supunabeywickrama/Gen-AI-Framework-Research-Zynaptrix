@@ -17,7 +17,9 @@ import {
   Square, 
   Thermometer, 
   Vibrate as VibrateIcon,
-  ArrowRight
+  ArrowRight,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
@@ -46,6 +48,7 @@ export default function IndustrialCopilotDashboard() {
   // Local transient UI states
   const [query, setQuery] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatMaximized, setIsChatMaximized] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Filter telemetry points for the current machine
@@ -291,8 +294,8 @@ export default function IndustrialCopilotDashboard() {
 
       {/* Chat Modal / Pop-up */}
       {isChatOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl h-[85vh] rounded-[2.5rem] shadow-4xl flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-500">
+        <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center animate-in fade-in duration-300 ${isChatMaximized ? 'p-0' : 'p-4'}`}>
+          <div className={`bg-slate-900 border border-slate-800 shadow-4xl flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-500 transition-all ${isChatMaximized ? 'w-full h-full rounded-none' : 'w-full max-w-4xl h-[85vh] rounded-[2.5rem]'}`}>
              
              {/* Modal Header */}
              <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
@@ -306,12 +309,21 @@ export default function IndustrialCopilotDashboard() {
                      <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">General Inquiry Mode</p>
                    )}
                 </div>
-                <button 
-                    onClick={() => setIsChatOpen(false)}
-                    className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 hover:text-white transition-all"
-                >
-                    <Square size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => setIsChatMaximized(!isChatMaximized)}
+                        className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 hover:text-white transition-all"
+                        title={isChatMaximized ? "Minimize" : "Maximize"}
+                    >
+                        {isChatMaximized ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+                    </button>
+                    <button 
+                        onClick={() => setIsChatOpen(false)}
+                        className="p-3 bg-red-600/20 hover:bg-red-600 rounded-2xl text-red-400 hover:text-white transition-all"
+                    >
+                        <Square size={20} />
+                    </button>
+                </div>
              </div>
 
              {/* Modal Chat Body */}
