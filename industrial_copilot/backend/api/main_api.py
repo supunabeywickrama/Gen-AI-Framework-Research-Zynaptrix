@@ -80,37 +80,106 @@ class TelemetryClientManager:
 
 telemetry_manager = TelemetryClientManager()
 
+from unified_rag.db.models import Machine, AnomalyRecord, ChatMessage, InteractionMemory
+
 class AnomalyEvent(BaseModel):
     machine_id: str = "PUMP-001"
     machine_state: str = "manual_inquiry"
+    anomaly_id: Optional[int] = None # Linked incident ID
     anomaly_score: Optional[float] = 0.0
     user_query: Optional[str] = None
     suspect_sensor: Optional[str] = "Unknown"
     recent_readings: Optional[Dict[str, Any]] = None
 
 @app.post("/api/copilot/invoke")
-async def invoke_copilot(event: AnomalyEvent):
-    initial_state = {
-        "event_id": "EVT-LIVE-QUERY",
-        "machine_id": event.machine_id,
-        "machine_state": event.machine_state,
-        "anomaly_score": event.anomaly_score,
-        "user_query": event.user_query,
-        "suspect_sensor": event.suspect_sensor,
-        "recent_readings": event.recent_readings or {},
-    }
-    result = copilot_workflow.invoke(initial_state)
-    return {"status": "success", "graph_result": result}
+def invoke_copilot(event: AnomalyEvent):
+    """Synchronous entry point to avoid blocking event loop during heavy RAG."""
+    with open("api_debug.log", "a") as f:
+        f.write(f"\n--- INQUIRY START: Anomaly #{event.anomaly_id} ---\n")
+        
+        initial_state = {
+            "event_id": f"EVT-{event.anomaly_id}" if event.anomaly_id else "EVT-LIVE-QUERY",
+            "machine_id": event.machine_id,
+            "machine_state": event.machine_state,
+            "anomaly_score": event.anomaly_score or 0.0,
+            "user_query": event.user_query,
+            "suspect_sensor": event.suspect_sensor,
+            "recent_readings": event.recent_readings or {},
+        }
+    
+        # 📝 PHASE 1: Persistent User Message (Isolated Session)
+        actual_id = None
+        db_user = SessionLocal()
+        try:
+            if event.anomaly_id:
+                try:
+                    look_id = int(event.anomaly_id)
+                    exists = db_user.query(AnomalyRecord).filter(AnomalyRecord.id == look_id).first()
+                    if exists:
+                        actual_id = look_id
+                        f.write(f"VERIFIED: Anomaly #{actual_id} found in DB.\n")
+                    else:
+                        f.write(f"WARNING: Anomaly #{look_id} NOT in DB.\n")
+                except Exception as e:
+                    f.write(f"ID_CAST_ERROR: {e}\n")
+
+            if event.user_query:
+                msg = ChatMessage(
+                    anomaly_id=actual_id,
+                    role='user',
+                    content=event.user_query,
+                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
+                db_user.add(msg)
+                db_user.commit()
+                f.write(f"SUCCESS: User message stored for ID {actual_id}.\n")
+        except Exception as e:
+            f.write(f"DB_ERROR[USER_PHASE]: {e}\n")
+        finally:
+            db_user.close()
+
+        # 🧠 PHASE 2: Agent Orchestration
+        try:
+            result = copilot_workflow.invoke(initial_state)
+            f.write("SUCCESS: Graph execution completed.\n")
+        except Exception as e:
+            f.write(f"GRAPH_ERROR: {e}\n")
+            return {"status": "error", "message": f"Orchestration failure: {str(e)}"}
+
+        # 🛡️ PHASE 3: Persistent Agent Response
+        final_answer = result.get("final_execution_plan", "")
+        if final_answer:
+            db_agent = SessionLocal()
+            try:
+                msg = ChatMessage(
+                    anomaly_id=actual_id,
+                    role='agent',
+                    content=final_answer,
+                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    images=json.dumps(result.get("retrieved_images", []))
+                )
+                db_agent.add(msg)
+                db_agent.commit()
+                f.write(f"SUCCESS: Agent response stored for ID {actual_id}.\n")
+            except Exception as e:
+                f.write(f"DB_ERROR[AGENT_PHASE]: {e}\n")
+            finally:
+                db_agent.close()
+                
+        return {"status": "success", "graph_result": result, "stored_id": actual_id}
+
+from api.machine_api import router as machine_registry_router
+app.include_router(machine_registry_router)
 
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket):
     await telemetry_manager.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
         telemetry_manager.disconnect(websocket)
-        
+
 # --- Real-Time Agentic Orchestration Layer ---
 
 async def async_broadcast_anomaly(result):
@@ -174,16 +243,23 @@ async def push_telemetry(data: dict, background_tasks: BackgroundTasks):
     """
     Broadcasts live telemetry to WebSockets and asynchronously runs Anomaly Detection.
     """
-    await telemetry_manager.broadcast(json.dumps({"type": "telemetry", "data": data}))
-    
     machine_id = data.get("machine_id", "PUMP-001")
     tracker = get_tracker(machine_id)
     
-    def background_anomaly_check(reading, t):
-        t.process(reading)
-        
-    background_tasks.add_task(background_anomaly_check, data, tracker)
-    return {"status": "broadcast_successful_and_analyzing"}
+    # Run synchronously for broadcast extraction
+    result = tracker.process(data)
+    
+    # Broadcast with health score
+    broadcast_payload = {
+        "type": "telemetry",
+        "data": {
+            **data,
+            "health_score": result.get("health_score", 100)
+        }
+    }
+    await telemetry_manager.broadcast(json.dumps(broadcast_payload))
+    
+    return {"status": "broadcast_successful_and_analyzing", "health": result.get("health_score")}
 
 import subprocess
 import sys

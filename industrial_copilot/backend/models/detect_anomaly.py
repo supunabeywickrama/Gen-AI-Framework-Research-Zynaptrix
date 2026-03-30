@@ -80,6 +80,26 @@ class AnomalyDetector:
         self._registry[machine_id] = assets
         return assets
 
+    def _calculate_health(self, score: float, threshold: float) -> int:
+        """
+        Calculates a 0-100% health score.
+        100% = Perfect alignment with normal patterns.
+        50%  = Threshold crossed (Anomaly starts).
+        <50% = Significant degradation.
+        """
+        if score <= 0: return 100
+        
+        if score < threshold:
+            # Linear decay from 100% to 50%
+            health = 100 - (score / threshold) * 50
+        else:
+            # Exponential decay from 50% down to 0%
+            # Half-life of decay is the threshold value again
+            import math
+            health = 50 * math.exp(-(score - threshold) / threshold)
+            
+        return int(max(0, min(100, health)))
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def detect(self, reading: dict) -> dict:
@@ -95,11 +115,14 @@ class AnomalyDetector:
         x_scaled = assets["scaler"].transform(x)
         x_pred   = assets["model"].predict(x_scaled, verbose=0)
         score    = float(np.mean(np.square(x_scaled - x_pred)))
+        
+        health_score = self._calculate_health(score, assets["threshold"])
 
         return {
             "is_anomaly": score > assets["threshold"],
             "score":      round(score, 6),
             "threshold":  round(assets["threshold"], 6),
+            "health_score": health_score,
             "sensors":    reading,
             "machine_id": machine_id
         }

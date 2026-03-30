@@ -15,58 +15,53 @@ class RAGGenerator:
     def __init__(self):
         self.retriever = RetrievalEngine()
         
-    def generate_response(self, query: str, manual_id: str):
+    def generate_response(self, query: str, manual_id: str, machine_id: str = None):
         """
         Executes the three-stage Multimodal RAG Pipeline:
-        1. Semantic Retrieval (Vector DB): Fetches relevant text chunks and images.
-        2. Visual Context Ingestion: Injects GPT-4o Vision captions into the context window.
-        3. Logic Consolidation: Generates a step-by-step repair guide with interleaved visuals.
+        1. Semantic Retrieval (Manual + History)
+        2. Visual Context Ingestion
+        3. Logic Consolidation: Generates a step-by-step repair guide.
         """
         db = SessionLocal()
         try:
             # STAGE 1: SEMANTIC RETRIEVAL
-            # Fetches the top-k text chunks and associated technical figures.
-            retrieved_data = self.retriever.retrieve(db, query, manual_id)
+            retrieved_data = self.retriever.retrieve(db, query, manual_id, machine_id)
             
-            # STAGE 2: CONTEXT BUILDER (Multimodal Synthesis)
+            # STAGE 2: CONTEXT BUILDER
             text_context = ""
             pages = set()
             image_references = []
             
-            # Aggregate Text Chunks with Metadata
+            # Aggregate Text Chunks
             for i, chunk in enumerate(retrieved_data["text_chunks"]):
-                text_context += f"--- Content Block {i+1} (Page {chunk.page}, Type: {chunk.type}) ---\n{chunk.content}\n\n"
-                if chunk.page is not None:
-                    pages.add(chunk.page)
+                text_context += f"--- Manual Context {i+1} (Page {chunk.page}) ---\n{chunk.content}\n\n"
+                if chunk.page is not None: pages.add(chunk.page)
             
-            # Aggregate Technical Diagrams with GPT-4o Vision Captions
+            # Aggregate Historical Field Fixes (PRIORITY CONTEXT)
+            history_context = ""
+            for i, fix in enumerate(retrieved_data.get("historical_fixes", [])):
+                history_context += f"--- PREVIOUS REAL-WORLD FIX {i+1} ({fix.timestamp}) ---\nSummary: {fix.summary}\nOperator Actions: {fix.operator_fix}\n\n"
+
+            # Aggregate Technical Diagrams
             for i, img in enumerate(retrieved_data["images"]):
-                if img.path:
-                    image_references.append(img.path)
-                if img.page is not None:
-                    pages.add(img.page)
+                if img.path: image_references.append(img.path)
+                text_context += f"--- Image Description {i+1} (Page {img.page}) ---\n{img.content}\n\n"
                 
-                # IMPORTANT: We inject the VISION CAPTION as text so the LLM knows what's in the diagram.
-                # This allows the LLM to 'see' the technical details during the strategy phase.
-                text_context += f"--- Image Description {i+1} (Page {img.page}, Type: {img.type}) ---\n{img.content}\n\n"
-                
-            # STAGE 3: CONTEXTUAL REASONING (OpenAI GPT-4o)
-            # We use gpt-4o for its superior technical reasoning and multimodal awareness.
-            
-            # Provide the LLM with an 'Inventory' of available diagrams for interleaving.
-            image_list_str = "\n".join([f"- [IMAGE_{i}]: {img.content} (Type: {img.type})" for i, img in enumerate(retrieved_data["images"])])
+            # STAGE 3: CONTEXTUAL REASONING
+            image_list_str = "\n".join([f"- [IMAGE_{i}]: {img.content}" for i, img in enumerate(retrieved_data["images"])])
             
             system_prompt = (
-                f"You are a Senior Industrial Systems Engineer specializing in the technical manual for: {manual_id}.\n"
-                "Your objective is to provide precise, technically accurate answers based ONLY on the provided manual context.\n\n"
+                f"You are a Senior Industrial Systems Engineer specializing in: {manual_id}.\n"
+                "Your objective is to provide precise, technically accurate answers using both the OFFICIAL MANUAL and HISTORICAL FIELD FIXES.\n\n"
+                "### KNOWLEDGE SOURCES:\n"
+                "1. **OFFICIAL MANUAL**: Theoretical ground truth.\n"
+                "2. **HISTORICAL FIELD FIXES**: Practical solutions previously implemented by operators on this machine. If these contradict the manual but were successful, mention them as 'field-proven alternatives'.\n\n"
                 "### INTERACTION PROTOCOL:\n"
-                "1. **SCOPE**: If the user asks a specific question, answer ONLY that question. Do not provide a full repair procedure unless asked.\n"
-                "2. **TECHNICAL HIERARCHY**: Use ## and ### for sections where appropriate.\n"
-                "3. **SEMANTIC INTERLEAVING**: Embed the tag [IMAGE_N] at the EXACT point where that technical diagram aids the explanation.\n"
-                "4. **PREMIUM SUGGESTIONS (MANDATORY)**: At the very end of your response, provide exactly 3 follow-up suggestions for the operator. "
-                "Format them strictly as: [SUGGESTION: Type specific follow-up query here]\n\n"
-                f"### AVAILABLE TECHNICAL DIAGRAMS (INVENTORY):\n{image_list_str}\n\n"
-                f"### OFFICIAL MANUAL CONTEXT (TEXT + VISION CAPTIONS):\n{text_context}"
+                "1. **SCOPE**: Answer the specific query accurately.\n"
+                "2. **SEMANTIC INTERLEAVING**: Embed [IMAGE_N] where helpful.\n"
+                "3. **PREMIUM SUGGESTIONS**: End with exactly 3 follow-up queries formatted as [SUGGESTION: query].\n\n"
+                f"### PREVIOUS SUCCESSFUL FIXES (HISTORICAL CONTEXT):\n{history_context if history_context else 'No previous records for this fault.'}\n\n"
+                f"### OFFICIAL MANUAL CONTEXT:\n{text_context}"
             )
             
             try:
