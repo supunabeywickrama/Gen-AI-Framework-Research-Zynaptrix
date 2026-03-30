@@ -371,7 +371,17 @@ export default function IndustrialCopilotDashboard() {
                         <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[85%] p-6 rounded-3xl shadow-2xl ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'}`}>
                                 <div className="text-sm leading-relaxed space-y-4 markdown-content">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        components={{
+                                            img: ({node, ...props}) => (
+                                                <img
+                                                    {...props}
+                                                    className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 hover:scale-105 transition-transform duration-300"
+                                                />
+                                            ),
+                                        }}
+                                    >
                                         {msg.content
                                             .replace(/\[SUGGESTION:.*?\]/gi, '') // Hide suggestions from main text
                                             .replace(/\[IMAGE[_\s-]?(\d+)\]/gi, (match, id) => {
@@ -388,14 +398,14 @@ export default function IndustrialCopilotDashboard() {
                                                 const isEmbedded = msg.content.match(new RegExp(`\\[IMAGE[_\s-]?${imgIdx}\\]`, 'gi'));
                                                 if (isEmbedded) return null;
                                                 return (
-                                                    <div key={imgIdx} className="group relative rounded-2xl overflow-hidden border border-slate-700 shadow-2xl bg-slate-900/50 backdrop-blur-sm">
+                                                    <div key={imgIdx} className="group relative rounded-2xl overflow-hidden border border-slate-700 shadow-2xl bg-slate-900/50 backdrop-blur-sm max-w-md">
                                                         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
                                                             <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Technical Manual Extract • Fig.{imgIdx}</p>
                                                         </div>
-                                                        <img 
-                                                            src={url} 
-                                                            alt={`Technical Diagram ${imgIdx}`} 
-                                                            className="w-full h-auto object-cover hover:scale-105 transition-transform duration-700" 
+                                                        <img
+                                                            src={url}
+                                                            alt={`Technical Diagram ${imgIdx}`}
+                                                            className="w-full h-auto max-h-80 object-contain hover:scale-105 transition-transform duration-700"
                                                         />
                                                     </div>
                                                 );
