@@ -32,6 +32,8 @@ import {
   setSystemState, 
   setAnomalyScore,
   fetchAnomalyHistory,
+  fetchChatHistory,
+  resolveAnomaly,
   inquireCopilot
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
@@ -41,7 +43,7 @@ export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
   
   // Redux-driven State
-  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore } = useSelector((state: RootState) => state.copilot);
+  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory } = useSelector((state: RootState) => state.copilot);
   const { machines, currentMachineId } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
   
@@ -49,6 +51,8 @@ export default function IndustrialCopilotDashboard() {
   const [query, setQuery] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isChatMaximized, setIsChatMaximized] = useState(false);
+  const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
+  const [operatorFix, setOperatorFix] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Filter telemetry points for the current machine
@@ -69,6 +73,13 @@ export default function IndustrialCopilotDashboard() {
       dispatch(fetchAnomalyHistory(currentMachineId));
     }
   }, [currentMachineId, dispatch]);
+
+  // Load chat history when an anomaly is selected
+  useEffect(() => {
+    if (activeAnomaly) {
+      dispatch(fetchChatHistory(activeAnomaly.id));
+    }
+  }, [activeAnomaly?.id, dispatch]);
 
   // WebSocket Telemetry Stream
   useEffect(() => {
@@ -100,7 +111,8 @@ export default function IndustrialCopilotDashboard() {
                 timestamp: new Date().toLocaleTimeString(),
                 type: result.machine_state,
                 score: Math.round(result.anomaly_score * 100),
-                sensor_data: JSON.stringify(result.recent_readings || {})
+                sensor_data: JSON.stringify(result.recent_readings || {}),
+                resolved: false
             }));
           }
         } catch (err) { console.error(err); }
@@ -117,7 +129,7 @@ export default function IndustrialCopilotDashboard() {
 
   const handleManualInquiry = (customQuery?: string) => {
     const finalQuery = customQuery || query;
-    if (!finalQuery) return;
+    if (!finalQuery || activeAnomaly?.resolved) return;
     dispatch(inquireCopilot({
       machine_id: currentMachineId,
       query: finalQuery,
@@ -125,6 +137,16 @@ export default function IndustrialCopilotDashboard() {
       context_anomaly: activeAnomaly || undefined
     }));
     setQuery('');
+  };
+
+  const handleResolve = async () => {
+    if (!activeAnomaly || !operatorFix) return;
+    await dispatch(resolveAnomaly({ 
+        anomalyId: activeAnomaly.id, 
+        operator_fix: operatorFix 
+    }));
+    setIsResolveModalOpen(false);
+    setOperatorFix('');
   };
 
   const toggleSimulation = async () => {
@@ -266,7 +288,10 @@ export default function IndustrialCopilotDashboard() {
                         <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-[0.1em] ${item.type.includes('fault') ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
                            {item.type.replace('machine_', '')}
                         </span>
-                        <span className="text-[9px] text-slate-500 font-mono italic">{item.timestamp}</span>
+                        <div className="flex items-center gap-2">
+                            {item.resolved && <CheckCircle size={10} className="text-emerald-500" />}
+                            <span className="text-[9px] text-slate-500 font-mono italic">{item.timestamp}</span>
+                        </div>
                      </div>
                      <p className="text-sm font-bold text-slate-200">Industrial Incident #{item.id}</p>
                      <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-tighter">Variance Score: {item.score}%</p>
@@ -309,7 +334,15 @@ export default function IndustrialCopilotDashboard() {
                      <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">General Inquiry Mode</p>
                    )}
                 </div>
-                <div className="flex items-center gap-2">
+                 <div className="flex items-center gap-2">
+                    {activeAnomaly && !activeAnomaly.resolved && (
+                        <button 
+                            onClick={() => setIsResolveModalOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-500/20"
+                        >
+                            <CheckCircle size={14} /> Complete Task
+                        </button>
+                    )}
                     <button 
                         onClick={() => setIsChatMaximized(!isChatMaximized)}
                         className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 hover:text-white transition-all"
@@ -328,64 +361,138 @@ export default function IndustrialCopilotDashboard() {
 
              {/* Modal Chat Body */}
              <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] scrollbar-thin scrollbar-thumb-slate-700">
-                {(chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-6 rounded-3xl shadow-2xl ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'}`}>
-                            <div className="text-sm leading-relaxed space-y-4 markdown-content">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {msg.content
-                                        .replace(/\[SUGGESTION:.*?\]/gi, '') // Hide suggestions from main text
-                                        .replace(/\[IMAGE[_\s-]?(\d+)\]/gi, (match, id) => {
-                                            const url = msg.images?.[parseInt(id)];
-                                            return url ? `![Technical Diagram ${id}](${url})` : match;
-                                        })
-                                    }
-                                </ReactMarkdown>
-                                
-                                {/* Dynamic AI Follow-up Suggestions */}
-                                {msg.role === 'agent' && msg.content.includes('[SUGGESTION:') && (
-                                    <div className="mt-6 pt-4 border-t border-slate-700/50 flex flex-wrap gap-2">
-                                        {Array.from(msg.content.matchAll(/\[SUGGESTION:\s*(.*?)\]/gi)).map((match, si) => (
-                                            <button 
-                                                key={si} 
-                                                onClick={() => handleManualInquiry(match[1])}
-                                                className="text-[10px] uppercase font-black bg-blue-600/20 text-blue-400 px-3 py-1.5 rounded-lg border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all"
-                                            >
-                                                {match[1]}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
+                {loadingHistory[activeAnomaly?.id.toString() || ''] && (!chatHistory[activeAnomaly?.id.toString() || ''] || chatHistory[activeAnomaly?.id.toString() || ''].length === 0) ? (
+                    <div className="h-full flex flex-col items-center justify-center opacity-50 space-y-4">
+                        <div className="h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        <p className="text-xs font-bold uppercase tracking-widest">Restoring Context...</p>
+                    </div>
+                ) : (
+                    (chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, i) => (
+                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[85%] p-6 rounded-3xl shadow-2xl ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'}`}>
+                                <div className="text-sm leading-relaxed space-y-4 markdown-content">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {msg.content
+                                            .replace(/\[SUGGESTION:.*?\]/gi, '') // Hide suggestions from main text
+                                            .replace(/\[IMAGE[_\s-]?(\d+)\]/gi, (match, id) => {
+                                                const url = msg.images?.[parseInt(id)];
+                                                return url ? `![Technical Diagram ${id}](${url})` : match;
+                                            })
+                                        }
+                                    </ReactMarkdown>
+
+                                    {/* Supplemental Image Gallery (for images not explicitly embedded) */}
+                                    {msg.role === 'agent' && msg.images && msg.images.length > 0 && (
+                                        <div className="mt-4 space-y-4">
+                                            {msg.images.map((url, imgIdx) => {
+                                                const isEmbedded = msg.content.match(new RegExp(`\\[IMAGE[_\s-]?${imgIdx}\\]`, 'gi'));
+                                                if (isEmbedded) return null;
+                                                return (
+                                                    <div key={imgIdx} className="group relative rounded-2xl overflow-hidden border border-slate-700 shadow-2xl bg-slate-900/50 backdrop-blur-sm">
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Technical Manual Extract • Fig.{imgIdx}</p>
+                                                        </div>
+                                                        <img 
+                                                            src={url} 
+                                                            alt={`Technical Diagram ${imgIdx}`} 
+                                                            className="w-full h-auto object-cover hover:scale-105 transition-transform duration-700" 
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    
+                                    {/* Dynamic AI Follow-up Suggestions */}
+                                    {msg.role === 'agent' && msg.content.includes('[SUGGESTION:') && !activeAnomaly?.resolved && (
+                                        <div className="mt-6 pt-4 border-t border-slate-700/50 flex flex-wrap gap-2">
+                                            {Array.from(msg.content.matchAll(/\[SUGGESTION:\s*(.*?)\]/gi)).map((match, si) => (
+                                                <button 
+                                                    key={si} 
+                                                    onClick={() => handleManualInquiry(match[1])}
+                                                    className="text-[10px] uppercase font-black bg-blue-600/20 text-blue-400 px-3 py-1.5 rounded-lg border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all"
+                                                >
+                                                    {match[1]}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                ))}
+                    ))
+                )}
                 <div ref={chatEndRef} />
              </div>
 
              {/* Modal Footer */}
              <div className="p-8 bg-slate-950/80 border-t border-slate-800 space-y-6">
-                <div className="flex flex-wrap gap-2">
-                    {diagnosticSuggestions.map((s, i) => (
-                        <button key={i} onClick={() => handleManualInquiry(s)} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-4 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all border border-slate-700">
-                            {s}
-                        </button>
-                    ))}
-                </div>
+                {!activeAnomaly?.resolved && (
+                    <div className="flex flex-wrap gap-2">
+                        {diagnosticSuggestions.map((s, i) => (
+                            <button key={i} onClick={() => handleManualInquiry(s)} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-4 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all border border-slate-700">
+                                {s}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <div className="flex items-center gap-4">
                     <input 
-                        className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200"
-                        placeholder="Type diagnostic query..."
+                        className={`flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200 ${activeAnomaly?.resolved ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        placeholder={activeAnomaly?.resolved ? "Incident resolved (Archived)" : "Type diagnostic query..."}
                         value={query}
+                        readOnly={activeAnomaly?.resolved}
                         onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleManualInquiry()}
                     />
-                    <button onClick={() => handleManualInquiry()} className="bg-blue-600 p-4 rounded-2xl hover:bg-blue-500 transition-all shadow-xl">
+                    <button 
+                        onClick={() => handleManualInquiry()} 
+                        disabled={activeAnomaly?.resolved}
+                        className={`bg-blue-600 p-4 rounded-2xl hover:bg-blue-500 transition-all shadow-xl ${activeAnomaly?.resolved ? 'opacity-30 cursor-not-allowed' : ''}`}
+                    >
                         <Send size={24} />
                     </button>
                 </div>
              </div>
           </div>
+        </div>
+      )}
+
+      {/* Incident Resolution Modal */}
+      {isResolveModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[60] flex items-center justify-center p-4">
+           <div className="bg-slate-900 border border-slate-800 rounded-[3rem] p-10 max-w-lg w-full shadow-4xl animate-in zoom-in-95 duration-300">
+              <div className="h-16 w-16 bg-emerald-600/20 text-emerald-500 rounded-3xl flex items-center justify-center mb-6">
+                 <CheckCircle size={32} />
+              </div>
+              <h2 className="text-2xl font-black text-white mb-2">Finalize Diagnostic</h2>
+              <p className="text-slate-400 text-sm leading-relaxed mb-8">
+                Briefly describe the **actual manual actions** taken on the machine. This will be vectorized into the AI knowledge base for future troubleshooting.
+              </p>
+              
+              <textarea 
+                className="w-full bg-slate-950 border border-slate-800 rounded-3xl p-6 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[150px] mb-8"
+                placeholder="e.g. Manually bled the hydraulic lines and replaced the leaking filter at ACV-102. Thermal integrity restored."
+                value={operatorFix}
+                onChange={(e) => setOperatorFix(e.target.value)}
+              />
+
+              <div className="flex gap-4">
+                 <button 
+                    onClick={() => setIsResolveModalOpen(false)}
+                    className="flex-1 px-6 py-4 rounded-2xl bg-slate-800 text-slate-400 font-bold hover:text-white transition-all text-xs uppercase tracking-widest"
+                 >
+                    Cancel
+                 </button>
+                 <button 
+                    onClick={handleResolve}
+                    disabled={!operatorFix.trim()}
+                    className="flex-[2] px-6 py-4 rounded-2xl bg-emerald-600 text-white font-black hover:bg-emerald-500 transition-all text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 disabled:opacity-30"
+                 >
+                    Archive Incident
+                 </button>
+              </div>
+           </div>
         </div>
       )}
     </div>

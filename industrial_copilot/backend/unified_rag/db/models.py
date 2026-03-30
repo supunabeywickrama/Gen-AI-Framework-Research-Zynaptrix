@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey
 from pgvector.sqlalchemy import Vector
 from unified_rag.db.database import Base
 
@@ -9,7 +9,7 @@ class ManualChunk(Base):
     manual_id = Column(String, index=True, nullable=False)
     type = Column(String, nullable=False) # 'text', 'image', 'table'
     content = Column(Text, nullable=True) # Text content or structured table string
-    embedding = Column(Vector, nullable=False) # Dimension omitted to allow 1536 (OpenAI text) or 512 (CLIP image)
+    embedding = Column(Vector, nullable=False) # Dimension 1536 (OpenAI text) or 512 (CLIP image)
     page = Column(Integer, nullable=True)
     path = Column(String, nullable=True) # Path to the extracted image file
 
@@ -30,4 +30,30 @@ class AnomalyRecord(Base):
     timestamp = Column(String, nullable=False)
     type = Column(String, nullable=False) # e.g. 'PUMP_FAULT'
     score = Column(Integer, nullable=False) # Normalized 0-100 or MSE
-    sensor_data = Column(Text, nullable=True) # JSON string of readings at time of incident
+    sensor_data = Column(Text, nullable=True) # JSON string of readings
+    resolved = Column(Boolean, default=False) # Manual HITL sign-off
+
+class ChatMessage(Base):
+    __tablename__ = "chat_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    anomaly_id = Column(Integer, ForeignKey("anomaly_records.id"), nullable=True) # NULL for general chat
+    role = Column(String, nullable=False) # 'agent' | 'user'
+    content = Column(Text, nullable=False)
+    timestamp = Column(String, nullable=False)
+    images = Column(Text, nullable=True) # JSON list of URLs for agent responses
+
+class InteractionMemory(Base):
+    """
+    Vectorized 'Historical Knowledge' derived from resolved incidents.
+    This allows the RAG engine to prioritize previous successful fixes.
+    """
+    __tablename__ = "interaction_memory"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    machine_id = Column(String, index=True, nullable=False)
+    manual_id = Column(String, nullable=False) # Origin manual
+    summary = Column(Text, nullable=False) # Actionable summary (steps performed)
+    operator_fix = Column(Text, nullable=True) # Final operator input
+    embedding = Column(Vector, nullable=False) # 1536 OpenAI
+    timestamp = Column(String, nullable=False)

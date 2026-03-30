@@ -85,7 +85,7 @@ def knowledge_retrieval_node(state: CopilotState):
             db.close()
             
             logger.info(f"🔍 [RAG Routing] Machine {machine_id} resolved to Manual: {manual_id}")
-            rag_response = rag_gen.generate_response(query, manual_id)
+            rag_response = rag_gen.generate_response(query, manual_id, machine_id)
             
             # API URL configuration with dynamic fallback
             api_url = os.getenv("API_URL", "http://127.0.0.1:8000")

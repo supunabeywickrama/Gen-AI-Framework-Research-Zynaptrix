@@ -61,6 +61,7 @@ class AnomalyService:
         """
         result = self._detector.detect(reading)
         result["timestamp"] = datetime.now(timezone.utc).isoformat()
+        health_score = result.get("health_score", 100)
 
         self._total_processed += 1
 
@@ -71,6 +72,7 @@ class AnomalyService:
             result["escalated"] = self._consecutive_count >= self._consec_threshold
 
             alert = format_alert(result)
+            alert["health_score"] = health_score
             log_alert(alert)
 
             if self._on_anomaly:
