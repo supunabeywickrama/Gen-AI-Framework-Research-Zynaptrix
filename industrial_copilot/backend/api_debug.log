@@ -16,3 +16,257 @@ VERIFIED: Anomaly #34 found in DB.
 SUCCESS: User message stored for ID 34.
 SUCCESS: Graph execution completed.
 SUCCESS: Agent response stored for ID 34.
+
+--- INQUIRY START: Anomaly #33 ---
+VERIFIED: Anomaly #33 found in DB.
+SUCCESS: User message stored for ID 33.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 33.
+
+--- INQUIRY START: Anomaly #33 ---
+VERIFIED: Anomaly #33 found in DB.
+SUCCESS: User message stored for ID 33.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 33.
+
+--- INQUIRY START: Anomaly #36 ---
+VERIFIED: Anomaly #36 found in DB.
+SUCCESS: User message stored for ID 36.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 36.
+
+--- INQUIRY START: Anomaly #34 ---
+VERIFIED: Anomaly #34 found in DB.
+SUCCESS: User message stored for ID 34.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 34.
+
+--- INQUIRY START: Anomaly #34 ---
+VERIFIED: Anomaly #34 found in DB.
+SUCCESS: User message stored for ID 34.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 34.
+
+--- INQUIRY START: Anomaly #34 ---
+VERIFIED: Anomaly #34 found in DB.
+SUCCESS: User message stored for ID 34.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 34.
+
+--- INQUIRY START: Anomaly #34 ---
+VERIFIED: Anomaly #34 found in DB.
+SUCCESS: User message stored for ID 34.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 34.
+
+--- INQUIRY START: Anomaly #34 ---
+VERIFIED: Anomaly #34 found in DB.
+SUCCESS: User message stored for ID 34.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 34.
+
+--- INQUIRY START: Anomaly #37 ---
+VERIFIED: Anomaly #37 found in DB.
+SUCCESS: User message stored for ID 37.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 37.
+
+--- INQUIRY START: Anomaly #37 ---
+VERIFIED: Anomaly #37 found in DB.
+SUCCESS: User message stored for ID 37.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 37.
+
+--- INQUIRY START: Anomaly #57 ---
+VERIFIED: Anomaly #57 found in DB.
+SUCCESS: User message stored for ID 57.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 57.
+
+--- INQUIRY START: Anomaly #57 ---
+VERIFIED: Anomaly #57 found in DB.
+SUCCESS: User message stored for ID 57.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 57.
+
+--- INQUIRY START: Anomaly #69 ---
+VERIFIED: Anomaly #69 found in DB.
+SUCCESS: User message stored for ID 69.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 69.
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+SUCCESS: User message stored for ID 144.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 144.
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+SUCCESS: User message stored for ID 144.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 144.
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+SUCCESS: User message stored for ID 144.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 144.
+
+--- INQUIRY START: Anomaly #143 ---
+VERIFIED: Anomaly #143 found in DB.
+SUCCESS: User message stored for ID 143.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 143.
+
+--- INQUIRY START: Anomaly #143 ---
+VERIFIED: Anomaly #143 found in DB.
+SUCCESS: User message stored for ID 143.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 143.
+
+--- INQUIRY START: Anomaly #141 ---
+VERIFIED: Anomaly #141 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 141, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-01 15:41:03', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_ERROR[AGENT_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 141, 'role': 'agent', 'content': "The anomaly labeled as 'machine_fault' is likely due to a significant deviation in temperature sensor readings (T-101) exceeding 15% from the moving  ... (253 characters truncated) ... ical data indicates that adjusting the clearance by 0.5mm has resolved similar warnings.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-01 15:41:17', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #141 ---
+VERIFIED: Anomaly #141 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 141, 'role': 'user', 'content': 'Generate full step-by-step repair procedure', 'timestamp': '2026-04-01 15:41:27', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-01 15:41:37', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_ERROR[AGENT_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'agent', 'content': "The anomaly labeled as 'machine_fault' is likely due to a significant deviation in temperature sensor readings (T-101) exceeding 15% from the moving  ... (229 characters truncated) ... of the cooling fans and lubricant condition is advised to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-01 15:41:47', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'user', 'content': 'Generate full step-by-step repair procedure', 'timestamp': '2026-04-01 15:42:02', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-01 15:43:33', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_ERROR[AGENT_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'agent', 'content': "The anomaly labeled as 'machine_fault' is likely due to a significant deviation in temperature sensor readings (T-101) exceeding 15% from the moving  ... (277 characters truncated) ... ast cases have shown that adjusting the clearance by 0.5mm can resolve similar warnings.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-01 15:43:45', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'user', 'content': 'Likely causes for this fault?', 'timestamp': '2026-04-01 15:44:22', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_ERROR[AGENT_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'agent', 'content': "The occurrence of a 'machine_fault' anomaly is likely due to a significant deviation in temperature sensor readings (T-101) by more than 15% from the ... (266 characters truncated) ... ese factors suggest that mechanical resistance or thermal management issues are at play.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-01 15:44:30', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #144 ---
+VERIFIED: Anomaly #144 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 144, 'role': 'user', 'content': 'Generate full step-by-step repair procedure', 'timestamp': '2026-04-01 15:45:28', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+
+--- INQUIRY START: Anomaly #158 ---
+VERIFIED: Anomaly #158 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 158, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-01 15:53:33', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_ERROR[AGENT_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 158, 'role': 'agent', 'content': 'The anomaly labeled as "machine_fault" is likely due to a significant deviation in temperature sensor readings (T-101) exceeding 15% from the moving  ... (218 characters truncated) ...  the cooling fans and lubricant condition is advisable to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]', 'timestamp': '2026-04-01 15:53:46', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #158 ---
+VERIFIED: Anomaly #158 found in DB.
+DB_ERROR[USER_PHASE]: (psycopg2.errors.UndefinedColumn) column "message_metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, message_me...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, message_metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(message_metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 158, 'role': 'user', 'content': 'Generate full step-by-step repair procedure', 'timestamp': '2026-04-01 15:53:58', 'images': None, 'message_metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+
+--- INQUIRY START: Anomaly #158 ---
+VERIFIED: Anomaly #158 found in DB.
+SUCCESS: User message stored for ID 158.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 158.
+
+--- INQUIRY START: Anomaly #158 ---
+VERIFIED: Anomaly #158 found in DB.
+SUCCESS: User message stored for ID 158.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 158.
