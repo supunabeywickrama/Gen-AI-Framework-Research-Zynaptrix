@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+// Step-by-step procedure flow is now inline in chat
 import { 
   Activity, 
   AlertTriangle, 
@@ -13,13 +14,16 @@ import {
   Play, 
   Send, 
   Server, 
+  ShieldAlert,
   ShieldCheck, 
   Square, 
   Thermometer, 
   Vibrate as VibrateIcon,
   ArrowRight,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Wrench,
+  MessageCircle
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
@@ -34,7 +38,8 @@ import {
   fetchAnomalyHistory,
   fetchChatHistory,
   resolveAnomaly,
-  inquireCopilot
+  inquireCopilot,
+  respondToStep
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
@@ -43,7 +48,7 @@ export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
   
   // Redux-driven State
-  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory } = useSelector((state: RootState) => state.copilot);
+  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory, activeProcedure } = useSelector((state: RootState) => state.copilot);
   const { machines, currentMachineId } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
   
@@ -53,6 +58,7 @@ export default function IndustrialCopilotDashboard() {
   const [isChatMaximized, setIsChatMaximized] = useState(false);
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
   const [operatorFix, setOperatorFix] = useState('');
+  const [stepComments, setStepComments] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Filter telemetry points for the current machine
@@ -74,10 +80,22 @@ export default function IndustrialCopilotDashboard() {
     }
   }, [currentMachineId, dispatch]);
 
-  // Load chat history when an anomaly is selected
+  // Load chat history and trigger initial diagnosis when an anomaly is selected
   useEffect(() => {
     if (activeAnomaly) {
-      dispatch(fetchChatHistory(activeAnomaly.id));
+      const anomalyIdStr = activeAnomaly.id.toString();
+      dispatch(fetchChatHistory(activeAnomaly.id)).then((action: any) => {
+        // action.payload is { anomalyId, messages }
+        const history = action.payload?.messages;
+        if (!history || history.length === 0) {
+          dispatch(inquireCopilot({
+            machine_id: activeAnomaly.machine_id,
+            query: "Provide a quick diagnostic summary for this alert.",
+            machine_state: activeAnomaly.type,
+            context_anomaly: activeAnomaly
+          }));
+        }
+      });
     }
   }, [activeAnomaly?.id, dispatch]);
 
@@ -147,6 +165,30 @@ export default function IndustrialCopilotDashboard() {
     }));
     setIsResolveModalOpen(false);
     setOperatorFix('');
+  };
+
+  const handleStepResponse = (stepId: string, status: string) => {
+    if (!activeAnomaly) return;
+    const targetId = activeAnomaly.id.toString();
+    const comment = stepComments[stepId] || undefined;
+    dispatch(respondToStep({ targetId, stepId, status, comment }));
+    // Clear the comment for this step
+    setStepComments(prev => { const n = {...prev}; delete n[stepId]; return n; });
+  };
+
+  // Helper: render step text with inline images
+  const renderStepContent = (text: string, images?: string[]) => {
+    const parts = text.split(/(\[IMAGE[_\s-]?\d+\])/gi);
+    return parts.map((part, i) => {
+      const match = part.match(/\[IMAGE[_\s-]?(\d+)\]/i);
+      if (match && images) {
+        const imgUrl = images[parseInt(match[1])];
+        if (imgUrl) {
+          return <img key={i} src={imgUrl} alt="Technical diagram" className="w-full max-w-lg h-auto rounded-xl border border-slate-700 my-3" />;
+        }
+      }
+      return <span key={i}>{part}</span>;
+    });
   };
 
   const toggleSimulation = async () => {
@@ -367,71 +409,165 @@ export default function IndustrialCopilotDashboard() {
                         <p className="text-xs font-bold uppercase tracking-widest">Restoring Context...</p>
                     </div>
                 ) : (
-                    (chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, i) => (
-                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] p-6 rounded-3xl shadow-2xl ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'}`}>
-                                <div className="text-sm leading-relaxed space-y-4 markdown-content">
-                                    <ReactMarkdown
-                                        remarkPlugins={[remarkGfm]}
-                                        components={{
-                                            img: ({node, ...props}) => (
-                                                <img
-                                                    {...props}
-                                                    className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 hover:scale-105 transition-transform duration-300"
-                                                />
-                                            ),
-                                        }}
-                                    >
-                                        {msg.content
-                                            .replace(/\[SUGGESTION:.*?\]/gi, '') // Hide suggestions from main text
-                                            .replace(/\[IMAGE[_\s-]?(\d+)\]/gi, (match, id) => {
-                                                const url = msg.images?.[parseInt(id)];
-                                                return url ? `![Technical Diagram ${id}](${url})` : match;
-                                            })
-                                        }
-                                    </ReactMarkdown>
+                    (chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, i) => {
+                        const hasSuggestion = msg.role === 'agent' && msg.content.includes('[SUGGESTION:');
+                        const displayContent = msg.content
+                            .replace(/\[PROCEDURE_START\][\s\S]*?\[PROCEDURE_END\]/gi, '')
+                            .replace(/\[ACTION:\s*(.*?)\]/gi, '')
+                            .replace(/\[SUGGESTION:.*?\]/gi, '')
+                            .trim();
 
-                                    {/* Supplemental Image Gallery (for images not explicitly embedded) */}
-                                    {msg.role === 'agent' && msg.images && msg.images.length > 0 && (
-                                        <div className="mt-4 space-y-4">
-                                            {msg.images.map((url, imgIdx) => {
-                                                const isEmbedded = msg.content.match(new RegExp(`\\[IMAGE[_\s-]?${imgIdx}\\]`, 'gi'));
-                                                if (isEmbedded) return null;
-                                                return (
-                                                    <div key={imgIdx} className="group relative rounded-2xl overflow-hidden border border-slate-700 shadow-2xl bg-slate-900/50 backdrop-blur-sm max-w-md">
-                                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                                                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Technical Manual Extract • Fig.{imgIdx}</p>
-                                                        </div>
-                                                        <img
-                                                            src={url}
-                                                            alt={`Technical Diagram ${imgIdx}`}
-                                                            className="w-full h-auto max-h-80 object-contain hover:scale-105 transition-transform duration-700"
-                                                        />
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                    
-                                    {/* Dynamic AI Follow-up Suggestions */}
-                                    {msg.role === 'agent' && msg.content.includes('[SUGGESTION:') && !activeAnomaly?.resolved && (
-                                        <div className="mt-6 pt-4 border-t border-slate-700/50 flex flex-wrap gap-2">
-                                            {Array.from(msg.content.matchAll(/\[SUGGESTION:\s*(.*?)\]/gi)).map((match, si) => (
-                                                <button 
-                                                    key={si} 
-                                                    onClick={() => handleManualInquiry(match[1])}
-                                                    className="text-[10px] uppercase font-black bg-blue-600/20 text-blue-400 px-3 py-1.5 rounded-lg border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all"
-                                                >
-                                                    {match[1]}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
+                        // === PHASE HEADER ===
+                        if (msg.type === 'phase_header') {
+                          return (
+                            <div key={i} className="flex justify-center my-6">
+                              <div className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white px-8 py-4 rounded-2xl border border-slate-600 shadow-xl text-center max-w-lg">
+                                <div className="text-sm font-black leading-relaxed">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                                 </div>
+                              </div>
                             </div>
-                        </div>
-                    ))
+                          );
+                        }
+
+                        // === INTERACTIVE STEP CARD ===
+                        if (msg.type === 'step' && msg.stepData) {
+                          const sd = msg.stepData;
+                          const isSafety = sd.phaseType === 'safety';
+                          const isResponded = !!msg.stepResponse;
+
+                          return (
+                            <div key={i} className="flex justify-start">
+                              <div className={`max-w-[90%] w-full rounded-3xl shadow-2xl border overflow-hidden transition-all duration-500 ${
+                                isResponded 
+                                  ? 'bg-slate-800/50 border-slate-700/50 opacity-70' 
+                                  : isSafety 
+                                    ? 'bg-gradient-to-br from-amber-950/40 to-slate-800 border-amber-500/40' 
+                                    : 'bg-gradient-to-br from-blue-950/40 to-slate-800 border-blue-500/40'
+                              }`}>
+                                <div className={`px-6 py-3 flex items-center justify-between ${
+                                  isSafety ? 'bg-amber-500/10 border-b border-amber-500/20' : 'bg-blue-500/10 border-b border-blue-500/20'
+                                }`}>
+                                  <div className="flex items-center gap-2">
+                                    {isSafety ? <ShieldAlert size={16} className="text-amber-400" /> : <Wrench size={16} className="text-blue-400" />}
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${isSafety ? 'text-amber-400' : 'text-blue-400'}`}>
+                                      {sd.subphaseTitle}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-bold text-slate-500 bg-slate-800 px-3 py-1 rounded-full">
+                                    Step {sd.stepIndex + 1} of {sd.totalSteps}
+                                  </span>
+                                </div>
+
+                                <div className="p-6">
+                                  <p className="text-white text-base font-medium leading-relaxed">
+                                    {renderStepContent(msg.content, msg.images)}
+                                  </p>
+
+                                  {sd.critical && !isResponded && (
+                                    <div className="inline-flex items-center gap-1.5 bg-red-500/15 text-red-400 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-red-500/30 mt-3">
+                                      <AlertTriangle size={12} /> Safety Critical
+                                    </div>
+                                  )}
+
+                                  {isResponded && msg.stepResponse && (
+                                    <div className={`mt-4 flex items-center gap-2 text-sm font-bold ${
+                                      msg.stepResponse.status === 'done' ? 'text-emerald-400' : 'text-red-400'
+                                    }`}>
+                                      <CheckCircle size={16} />
+                                      <span className="capitalize">{msg.stepResponse.status.replace('_', ' ')}</span>
+                                      {msg.stepResponse.comment && <span className="text-slate-400 font-normal ml-2">&mdash; &quot;{msg.stepResponse.comment}&quot;</span>}
+                                    </div>
+                                  )}
+
+                                  {!isResponded && (
+                                    <div className="mt-6 space-y-4">
+                                      {isSafety ? (
+                                        <div className="flex flex-wrap gap-3">
+                                          <button onClick={() => handleStepResponse(sd.stepId, 'done')} className="flex-1 min-w-[130px] py-3 px-4 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
+                                            <CheckCircle size={14} /> I have done
+                                          </button>
+                                          <button onClick={() => handleStepResponse(sd.stepId, 'havent_done')} className="flex-1 min-w-[130px] py-3 px-4 bg-yellow-600/20 hover:bg-yellow-600 text-yellow-400 hover:text-white border border-yellow-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
+                                            ⏳ Haven&apos;t done
+                                          </button>
+                                          <button onClick={() => handleStepResponse(sd.stepId, 'cant_do')} className="flex-1 min-w-[130px] py-3 px-4 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
+                                            <AlertTriangle size={14} /> Can&apos;t do it
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-3">
+                                          <input
+                                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Add a comment (optional)..."
+                                            value={stepComments[sd.stepId] || ''}
+                                            onChange={(e) => setStepComments(prev => ({...prev, [sd.stepId]: e.target.value}))}
+                                          />
+                                          <div className="flex gap-3">
+                                            <button onClick={() => handleStepResponse(sd.stepId, 'done')} className="flex-1 py-3 px-6 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
+                                              <CheckCircle size={14} /> Done
+                                            </button>
+                                            <button onClick={() => handleStepResponse(sd.stepId, 'undone')} className="flex-1 py-3 px-6 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
+                                              <AlertTriangle size={14} /> Undone
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // === PROCEDURE COMPLETE ===
+                        if (msg.type === 'procedure_complete') {
+                          return (
+                            <div key={i} className="flex justify-center my-6">
+                              <div className="bg-gradient-to-r from-emerald-900/30 to-emerald-800/20 border border-emerald-500/30 text-white px-10 py-8 rounded-3xl shadow-2xl text-center max-w-lg">
+                                <div className="text-5xl mb-4">🎉</div>
+                                <div className="text-lg font-black mb-2">All Steps Completed!</div>
+                                <p className="text-sm text-slate-400">Click <span className="text-emerald-400 font-bold">Complete Task</span> above to finalize.</p>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // === USER MESSAGE ===
+                        if (msg.role === 'user') {
+                          return (
+                            <div key={i} className="flex justify-end">
+                              <div className="max-w-[75%] bg-blue-600 text-white rounded-3xl rounded-br-none p-5 shadow-xl">
+                                <p className="text-sm leading-relaxed whitespace-pre-line">{msg.content}</p>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // === AGENT TEXT (summary / regular) ===
+                        return (
+                          <div key={i} className="flex justify-start">
+                            <div className="max-w-[85%] bg-slate-800 text-slate-100 border border-slate-700 rounded-3xl rounded-tl-none p-6 shadow-2xl">
+                              {displayContent && (
+                                <div className="text-sm leading-relaxed space-y-3 markdown-content">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3" />) }}>
+                                    {displayContent}
+                                  </ReactMarkdown>
+                                </div>
+                              )}
+                              {hasSuggestion && !activeAnomaly?.resolved && (
+                                <div className="mt-6 pt-5 border-t border-slate-700/50">
+                                  <button onClick={() => handleManualInquiry("Generate full step-by-step repair procedure")} className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm uppercase tracking-widest rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-95">
+                                    <ShieldCheck size={20} /> 🔧 Start Guided Repair Procedure <ArrowRight size={18} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                    })
                 )}
+
                 <div ref={chatEndRef} />
              </div>
 

@@ -64,12 +64,14 @@ def knowledge_retrieval_node(state: CopilotState):
     logger.info(f"🤖 [Agent] Knowledge Retrieval for Machine: {state.get('machine_id', 'Unknown')}")
     machine_id = state.get('machine_id', 'PUMP-001')
     
-    # HITL: Use the operator's specific query if available, otherwise default to a general fix
+    # HITL: Use the operator's specific query if available, otherwise default to a general summary
     user_q = state.get('user_query')
-    if user_q and user_q.strip():
-        query = f"{user_q} (Context: {state['machine_state']} with readings {state.get('recent_readings')})"
+    if user_q and "Generate full step-by-step repair procedure" in user_q:
+        query = f"Provide the FULL structured JSON repair procedure for {state['machine_state']}."
+    elif user_q and user_q.strip():
+        query = f"Diagnostic Summary only for: {user_q} (Anomaly: {state['machine_state']})"
     else:
-        query = f"Provide repair instructions and troubleshooting steps for {state['machine_state']}."
+        query = f"Provide a brief diagnostic summary and status for {state['machine_state']}."
     
     images = []
     if rag_gen:
@@ -128,18 +130,16 @@ def critic_node(state: CopilotState):
     feedback = f"Validation: Safety protocols verified against {state.get('machine_id', 'Asset')} Technical Documentation. Strategy approved for execution."
     
     # HITL: If this is a specific user query, provide a clean chat response.
-    # If it's an initial anomaly detection (no user query yet), provide the formal Report.
+    # If it's an initial anomaly detection (no user query yet), provide a brief summary.
     user_q = state.get('user_query')
     if user_q and user_q.strip():
         final_output = state['strategy_report']
     else:
-        # Construction of the formal Multimodal Payload for initial alerts
+        # Initial AI Diagnostic Message: Clean & Suggestion-Focused
         final_output = (
-            f"# 🚨 AI DIAGNOSTIC REPORT\n"
-            f"**Event ID**: {state['event_id']} | **Score**: {state['anomaly_score']:.2f}\n\n"
-            f"{state['strategy_report']}\n\n"
-            f"---\n"
-            f"**[Critic Sign-off]**: {feedback}"
+            f"### 🚨 AI Diagnostic Alert\n"
+            f"**Event**: {state['machine_state']} | **Confidence**: {state['anomaly_score']:.2f}\n\n"
+            f"{state['strategy_report']}\n"
         )
         
     return {

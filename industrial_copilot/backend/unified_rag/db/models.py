@@ -4,6 +4,7 @@ from unified_rag.db.database import Base
 
 class ManualChunk(Base):
     __tablename__ = "manual_chunks"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     manual_id = Column(String, index=True, nullable=False)
@@ -15,6 +16,7 @@ class ManualChunk(Base):
 
 class Machine(Base):
     __tablename__ = "machines"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     machine_id = Column(String, unique=True, index=True, nullable=False)
@@ -24,6 +26,7 @@ class Machine(Base):
 
 class AnomalyRecord(Base):
     __tablename__ = "anomaly_records"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     machine_id = Column(String, index=True, nullable=False)
@@ -35,6 +38,7 @@ class AnomalyRecord(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_history"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     anomaly_id = Column(Integer, ForeignKey("anomaly_records.id"), nullable=True) # NULL for general chat
@@ -42,6 +46,9 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     timestamp = Column(String, nullable=False)
     images = Column(Text, nullable=True) # JSON list of URLs for agent responses
+    # Use 'message_metadata' in Python to avoid conflict with SQLAlchemy's reserved 'metadata' attribute, 
+    # but keep it mapped to the 'metadata' column in the database.
+    message_metadata = Column("metadata", Text, nullable=True) # JSON: procedure state, task completion, etc.
 
 class InteractionMemory(Base):
     """
@@ -49,6 +56,7 @@ class InteractionMemory(Base):
     This allows the RAG engine to prioritize previous successful fixes.
     """
     __tablename__ = "interaction_memory"
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     machine_id = Column(String, index=True, nullable=False)

@@ -55,10 +55,38 @@ async def get_chat_history(anomaly_id: int):
                 "role": m.role,
                 "content": m.content,
                 "timestamp": m.timestamp,
-                "images": json.loads(m.images) if m.images else []
+                "images": json.loads(m.images) if m.images else [],
+                "metadata": json.loads(m.message_metadata) if m.message_metadata else None,
+                "db_id": m.id
             } 
             for m in messages
         ]
+    finally:
+        db.close()
+
+class TaskUpdateRequest(BaseModel):
+    task_id: str
+    completed: bool
+
+@router.patch("/api/chat-message/{message_id}/task")
+async def update_task_status(message_id: int, req: TaskUpdateRequest):
+    """Update a single task completion status within a procedure stored in a chat message."""
+    db = SessionLocal()
+    try:
+        msg = db.query(ChatMessage).filter(ChatMessage.id == message_id).first()
+        if not msg:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        meta = json.loads(msg.message_metadata) if msg.message_metadata else {}
+        if "completed_tasks" not in meta:
+            meta["completed_tasks"] = {}
+        meta["completed_tasks"][req.task_id] = req.completed
+        msg.message_metadata = json.dumps(meta)
+        db.commit()
+        return {"status": "updated", "completed_tasks": meta["completed_tasks"]}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
