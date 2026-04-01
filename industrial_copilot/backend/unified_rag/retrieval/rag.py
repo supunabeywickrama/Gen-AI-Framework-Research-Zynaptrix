@@ -9,9 +9,10 @@ openai.api_key = settings.openai_api_key
 class RAGGenerator:
     """
     The core Multimodal Retrieval-Augmented Generation (RAG) engine.
-    Operates in two strict modes:
+    Operates in three strict modes:
       MODE 1 (SUMMARY): Short diagnostic summary only. No steps, no lists.
       MODE 2 (PROCEDURE): Structured JSON procedure only. No markdown.
+      MODE 3 (CLARIFICATION): Detailed, non-technical drill-down for a specific maintenance step.
     """
     def __init__(self):
         self.retriever = RetrievalEngine()
@@ -44,9 +45,14 @@ class RAGGenerator:
                 
             # STAGE 3: MODE DETECTION
             is_procedure_request = "Generate full step-by-step repair procedure" in query or "FULL structured JSON repair procedure" in query
+            is_clarification_request = "[CLARIFY_STEP]" in query
             
             if is_procedure_request:
                 system_prompt = self._build_procedure_prompt(manual_id, text_context, history_context, image_references)
+            elif is_clarification_request:
+                # Extract the specific step text to clarify
+                step_text = query.replace("[CLARIFY_STEP]", "").strip()
+                system_prompt = self._build_clarification_prompt(manual_id, step_text, text_context, image_references)
             else:
                 system_prompt = self._build_summary_prompt(manual_id, text_context, history_context)
             
@@ -162,4 +168,26 @@ class RAGGenerator:
             "[PROCEDURE_END]\n\n"
             f"MANUAL CONTEXT:\n{text_context}\n\n"
             f"HISTORICAL REPAIRS:\n{history_context}"
+        )
+
+    def _build_clarification_prompt(self, manual_id: str, step_text: str, text_context: str, image_references: list) -> str:
+        """
+        MODE 3: Step Clarification Prompt.
+        Focuses on providing a detailed, non-technical explanation for a single specific task.
+        """
+        image_tags = "\n".join([f"  - [IMAGE_{i}] for image reference {i}" for i in range(len(image_references))])
+        
+        return (
+            f"You are a Technical Mentor for: {manual_id}.\n\n"
+            f"YOUR TASK: Provide a detailed, easy-to-understand explanation for the following maintenance step:\n"
+            f"'{step_text}'\n\n"
+            "CONTEXT RULES:\n"
+            "1. Explain the task to someone with NO technical background. Avoid jargon.\n"
+            "2. Use bullet points for sub-tasks if necessary.\n"
+            "3. Reference technical diagrams using the available image tags if they help illustrate THIS specific task.\n"
+            "4. Include safety warnings if the task is dangerous.\n"
+            "5. If the manual context contains specific tools or torque values for this task, include them clearly.\n"
+            "6. Your response should be encouraging and supportive.\n\n"
+            f"AVAILABLE IMAGE TAGS:\n{image_tags}\n\n"
+            f"MANUAL CONTEXT TO USE AS SOURCE OF TRUTH:\n{text_context}"
         )

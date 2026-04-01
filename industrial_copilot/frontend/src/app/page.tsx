@@ -39,7 +39,10 @@ import {
   fetchChatHistory,
   resolveAnomaly,
   inquireCopilot,
-  respondToStep
+  respondToStep,
+  clarifyStep,
+  submitAdaptiveStepResponse,
+  forceAdvanceStep
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
@@ -171,9 +174,27 @@ export default function IndustrialCopilotDashboard() {
     if (!activeAnomaly) return;
     const targetId = activeAnomaly.id.toString();
     const comment = stepComments[stepId] || undefined;
-    dispatch(respondToStep({ targetId, stepId, status, comment }));
-    // Clear the comment for this step
+    
+    // Use the adaptive response thunk to trigger AI help if needed
+    dispatch(submitAdaptiveStepResponse({ 
+      targetId, 
+      machineId: currentMachineId,
+      stepId, 
+      status, 
+      comment 
+    }));
+    
     setStepComments(prev => { const n = {...prev}; delete n[stepId]; return n; });
+  };
+
+  const handleClarifyStep = (stepId: string, stepText: string) => {
+    if (!activeAnomaly) return;
+    dispatch(clarifyStep({
+      targetId: activeAnomaly.id.toString(),
+      machineId: currentMachineId,
+      stepText: stepText,
+      stepId: stepId
+    }));
   };
 
   // Helper: render step text with inline images
@@ -481,37 +502,37 @@ export default function IndustrialCopilotDashboard() {
                                   )}
 
                                   {!isResponded && (
-                                    <div className="mt-6 space-y-4">
-                                      {isSafety ? (
-                                        <div className="flex flex-wrap gap-3">
-                                          <button onClick={() => handleStepResponse(sd.stepId, 'done')} className="flex-1 min-w-[130px] py-3 px-4 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                            <CheckCircle size={14} /> I have done
-                                          </button>
-                                          <button onClick={() => handleStepResponse(sd.stepId, 'havent_done')} className="flex-1 min-w-[130px] py-3 px-4 bg-yellow-600/20 hover:bg-yellow-600 text-yellow-400 hover:text-white border border-yellow-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                            ⏳ Haven&apos;t done
-                                          </button>
-                                          <button onClick={() => handleStepResponse(sd.stepId, 'cant_do')} className="flex-1 min-w-[130px] py-3 px-4 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                            <AlertTriangle size={14} /> Can&apos;t do it
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="space-y-3">
-                                          <input
-                                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="Add a comment (optional)..."
-                                            value={stepComments[sd.stepId] || ''}
-                                            onChange={(e) => setStepComments(prev => ({...prev, [sd.stepId]: e.target.value}))}
-                                          />
-                                          <div className="flex gap-3">
-                                            <button onClick={() => handleStepResponse(sd.stepId, 'done')} className="flex-1 py-3 px-6 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                              <CheckCircle size={14} /> Done
-                                            </button>
-                                            <button onClick={() => handleStepResponse(sd.stepId, 'undone')} className="flex-1 py-3 px-6 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                              <AlertTriangle size={14} /> Undone
-                                            </button>
-                                          </div>
-                                        </div>
+                                    <div className="mt-6 space-y-3">
+                                      <div className="flex flex-wrap gap-2">
+                                        <button 
+                                          onClick={() => handleClarifyStep(sd.stepId, msg.content)}
+                                          className="flex-1 py-3 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                        >
+                                          <MessageCircle size={14} /> Show me how
+                                        </button>
+                                        <button 
+                                          onClick={() => handleStepResponse(sd.stepId, 'cant_do')}
+                                          className="flex-1 py-3 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                        >
+                                          <AlertTriangle size={14} /> I&apos;m stuck
+                                        </button>
+                                      </div>
+
+                                      {!isSafety && (
+                                        <input
+                                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                          placeholder="Add a comment (optional)..."
+                                          value={stepComments[sd.stepId] || ''}
+                                          onChange={(e) => setStepComments(prev => ({...prev, [sd.stepId]: e.target.value}))}
+                                        />
                                       )}
+
+                                      <button 
+                                        onClick={() => handleStepResponse(sd.stepId, 'done')} 
+                                        className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                                      >
+                                        <CheckCircle size={18} /> {isSafety ? 'I have done' : 'Mark as Done'}
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -544,18 +565,72 @@ export default function IndustrialCopilotDashboard() {
                           );
                         }
 
-                        // === AGENT TEXT (summary / regular) ===
+                        // === AGENT TEXT (summary / regular / clarification) ===
                         return (
                           <div key={i} className="flex justify-start">
-                            <div className="max-w-[85%] bg-slate-800 text-slate-100 border border-slate-700 rounded-3xl rounded-tl-none p-6 shadow-2xl">
+                            <div className={`max-w-[85%] rounded-3xl rounded-tl-none p-6 shadow-2xl ${
+                                msg.type === 'step_clarification' 
+                                    ? 'bg-blue-900/20 border border-blue-500/30' 
+                                    : msg.type === 'branching_advice'
+                                        ? 'bg-amber-900/20 border border-amber-500/30'
+                                        : 'bg-slate-800 text-slate-100 border border-slate-700'
+                            }`}>
+                              {msg.type === 'step_clarification' && (
+                                <div className="flex items-center gap-2 mb-4 text-blue-400 text-[10px] font-black uppercase tracking-widest">
+                                    <ShieldCheck size={14} /> AI Tutorial Detail
+                                </div>
+                              )}
+                              {msg.type === 'branching_advice' && (
+                                <div className="flex items-center gap-2 mb-4 text-amber-400 text-[10px] font-black uppercase tracking-widest">
+                                    <AlertTriangle size={14} /> Adaptive Recommendations
+                                </div>
+                              )}
                               {displayContent && (
                                 <div className="text-sm leading-relaxed space-y-3 markdown-content">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3" />) }}>
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 shadow-lg" />) }}>
                                     {displayContent}
                                   </ReactMarkdown>
                                 </div>
                               )}
-                              {hasSuggestion && !activeAnomaly?.resolved && (
+                              
+                              {/* Status Display (Consistent with StepCard) */}
+                              {msg.stepResponse && (
+                                <div className={`mt-4 flex items-center gap-2 text-sm font-bold ${
+                                  msg.stepResponse.status === 'done' ? 'text-emerald-400' : 'text-red-400'
+                                }`}>
+                                  <CheckCircle size={16} />
+                                  <span className="capitalize">{msg.stepResponse.status.replace('_', ' ')}</span>
+                                  {msg.stepResponse.comment && <span className="text-slate-400 font-normal ml-2">&mdash; &quot;{msg.stepResponse.comment}&quot;</span>}
+                                </div>
+                              )}
+
+                              {/* Follow-up actions for Tutorial/Advice (Uniform Design) */}
+                              {!msg.stepResponse && (msg.type === 'step_clarification' || msg.type === 'branching_advice') && msg.stepData?.stepId && (
+                                <div className="mt-6 pt-5 border-t border-slate-700/50 space-y-3">
+                                   <div className="flex flex-wrap gap-2">
+                                      <button 
+                                          onClick={() => handleClarifyStep(msg.stepData!.stepId, msg.content)}
+                                          className="flex-1 py-3 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                      >
+                                          <MessageCircle size={14} /> Show me how
+                                      </button>
+                                      <button 
+                                          onClick={() => handleStepResponse(msg.stepData!.stepId, 'cant_do')}
+                                          className="flex-1 py-3 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                      >
+                                          <AlertTriangle size={14} /> I&apos;m stuck
+                                      </button>
+                                   </div>
+                                   <button 
+                                      onClick={() => handleStepResponse(msg.stepData!.stepId, 'done')}
+                                      className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+                                   >
+                                      <CheckCircle size={18} /> Mark as Done
+                                   </button>
+                                </div>
+                              )}
+
+                              {hasSuggestion && !activeAnomaly?.resolved && msg.type !== 'branching_advice' && (
                                 <div className="mt-6 pt-5 border-t border-slate-700/50">
                                   <button onClick={() => handleManualInquiry("Generate full step-by-step repair procedure")} className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm uppercase tracking-widest rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-95">
                                     <ShieldCheck size={20} /> 🔧 Start Guided Repair Procedure <ArrowRight size={18} />

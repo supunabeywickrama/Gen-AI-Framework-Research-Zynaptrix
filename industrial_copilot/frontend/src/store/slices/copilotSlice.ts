@@ -43,8 +43,9 @@ export interface StepData {
 }
 
 export interface StepResponse {
-  status: 'done' | 'undone' | 'cant_do' | 'havent_done';
+  status: 'done' | 'undone' | 'cant_do' | 'havent_done' | 'clarification_requested';
   comment?: string;
+  advice?: string; // AI provided troubleshooting/branching advice
 }
 
 export interface FlatStep {
@@ -73,7 +74,7 @@ export interface ChatMessage {
   quickActions?: string[];
   dbId?: number;
   // Step-by-step interactive
-  type?: 'text' | 'step' | 'phase_header' | 'procedure_complete';
+  type?: 'text' | 'step' | 'phase_header' | 'procedure_complete' | 'step_clarification' | 'branching_advice';
   stepData?: StepData;
   stepResponse?: StepResponse;
 }
@@ -228,6 +229,87 @@ export const inquireCopilot = createAsyncThunk(
   }
 );
 
+export const clarifyStep = createAsyncThunk(
+  'copilot/clarifyStep',
+  async (payload: { targetId: string; machineId: string; stepText: string; stepId: string }, { dispatch }) => {
+    // Add user message: "Show me how"
+    dispatch(addChatMessage({ 
+        role: 'user', 
+        content: `I need more detail on: "${payload.stepText}"`,
+        targetId: payload.targetId 
+    }));
+
+    // Add placeholder
+    dispatch(addChatMessage({ 
+        role: 'agent', 
+        content: '🔍 Retrieving detailed manual instructions...',
+        targetId: payload.targetId,
+        type: 'step_clarification',
+        stepData: {
+          stepId: payload.stepId,
+          stepText: payload.stepText
+        } as any
+    }));
+
+    const response = await fetch(`${API_BASE}/api/copilot/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+          machine_id: payload.machineId,
+          user_query: `[CLARIFY_STEP] ${payload.stepText}`,
+          machine_state: "clarification_request"
+      }),
+    });
+
+    if (!response.ok) throw new Error('Clarification failed');
+    return { targetId: payload.targetId, data: await response.json() };
+  }
+);
+
+export const submitAdaptiveStepResponse = createAsyncThunk(
+  'copilot/adaptiveResponse',
+  async (payload: { targetId: string; machineId: string; stepId: string; status: string; comment?: string }, { dispatch, getState }) => {
+    const { targetId, machineId, stepId, status, comment } = payload;
+    
+    // 1. Dispatch the local response first to keep UI responsive
+    dispatch(respondToStep({ targetId, stepId, status, comment }));
+
+    // 2. If status is 'undone' or 'cant_do', ask AI for branching path
+    if (status === 'undone' || status === 'cant_do') {
+        const state = getState() as { copilot: CopilotState };
+        const proc = state.copilot.activeProcedure[targetId];
+        const step = proc.flatSteps.find(s => s.id === stepId);
+        
+        dispatch(addChatMessage({ 
+            role: 'agent', 
+            content: '🤔 I see you had trouble with that. Searching for an alternative approach...',
+            targetId,
+            type: 'branching_advice',
+            stepData: {
+              stepId: payload.stepId,
+              stepText: step?.text || ''
+            } as any
+        }));
+
+        const response = await fetch(`${API_BASE}/api/copilot/invoke`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              machine_id: machineId,
+              user_query: `I could not complete step "${step?.text}". Reason: ${comment || 'unknown'}. What should I check next?`,
+              machine_state: "troubleshooting_branch"
+          }),
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            return { targetId, data };
+        }
+    }
+    return null;
+  }
+);
+
 const copilotSlice = createSlice({
   name: 'copilot',
   initialState,
@@ -273,11 +355,11 @@ const copilotSlice = createSlice({
       // Record response in procedure state
       proc.responses[stepId] = { status: status as StepResponse['status'], comment };
 
-      // Mark the step message as responded (find the last step message with this ID)
+      // Mark relatevd messages as responded (find all matching stepId)
       for (let i = history.length - 1; i >= 0; i--) {
-        if (history[i].type === 'step' && history[i].stepData?.stepId === stepId) {
-          history[i].stepResponse = { status: status as StepResponse['status'], comment };
-          break;
+        const msg = history[i];
+        if ((msg.type === 'step' || msg.type === 'step_clarification' || msg.type === 'branching_advice') && msg.stepData?.stepId === stepId) {
+          msg.stepResponse = { status: status as StepResponse['status'], comment };
         }
       }
 
@@ -292,11 +374,61 @@ const copilotSlice = createSlice({
       if (comment && comment.trim()) userMsg += `\n💬 "${comment}"`;
       history.push({ role: 'user', content: userMsg });
 
-      // Advance to next step
+      // Advance to next step ONLY FOR 'done' status
+      if (status === 'done') {
+        proc.currentStepIndex++;
+
+        if (proc.currentStepIndex >= proc.flatSteps.length) {
+          // === ALL STEPS DONE ===
+          proc.completed = true;
+          history.push({
+            role: 'agent',
+            content: '🎉 **All procedure steps completed!**\n\nGreat work! Click **Complete Task** above to finalize and archive this incident with your notes.',
+            type: 'procedure_complete',
+          });
+        } else {
+          const nextStep = proc.flatSteps[proc.currentStepIndex];
+          const prevStep = proc.flatSteps[proc.currentStepIndex - 1];
+
+          // Phase transition header
+          if (nextStep.phaseId !== prevStep.phaseId) {
+            history.push({
+              role: 'agent',
+              content: `✅ **${prevStep.phaseTitle}** — Complete!\n\nProceeding to **${nextStep.phaseTitle}**...`,
+              type: 'phase_header',
+            });
+          }
+
+          // Add next step message
+          history.push({
+            role: 'agent',
+            content: nextStep.text,
+            type: 'step',
+            stepData: {
+              stepId: nextStep.id,
+              phaseType: nextStep.phaseType,
+              phaseTitle: nextStep.phaseTitle,
+              subphaseTitle: nextStep.subphaseTitle,
+              stepIndex: proc.currentStepIndex,
+              totalSteps: proc.flatSteps.length,
+              critical: nextStep.critical,
+            },
+            images: proc.images,
+          });
+        }
+      }
+    },
+    
+    forceAdvanceStep(state, action: PayloadAction<{ targetId: string }>) {
+      const { targetId } = action.payload;
+      const proc = state.activeProcedure[targetId];
+      if (!proc) return;
+      const history = state.chatHistory[targetId];
+      if (!history) return;
+
       proc.currentStepIndex++;
 
       if (proc.currentStepIndex >= proc.flatSteps.length) {
-        // === ALL STEPS DONE ===
         proc.completed = true;
         history.push({
           role: 'agent',
@@ -307,7 +439,6 @@ const copilotSlice = createSlice({
         const nextStep = proc.flatSteps[proc.currentStepIndex];
         const prevStep = proc.flatSteps[proc.currentStepIndex - 1];
 
-        // Phase transition header
         if (nextStep.phaseId !== prevStep.phaseId) {
           history.push({
             role: 'agent',
@@ -316,7 +447,6 @@ const copilotSlice = createSlice({
           });
         }
 
-        // Add next step message
         history.push({
           role: 'agent',
           content: nextStep.text,
@@ -456,15 +586,49 @@ const copilotSlice = createSlice({
       }
     });
 
-    builder.addCase(inquireCopilot.rejected, (state, action) => {
-       const targetId = action.meta.arg.context_anomaly?.id.toString() || 'general';
-       const history = state.chatHistory[targetId];
-       if (history && history.length > 0) {
-         const lastIdx = history.length - 1;
-         history[lastIdx].content = "⚠️ Error communicating with Copilot backend.";
-       }
-    });
-  }
+     builder.addCase(inquireCopilot.rejected, (state, action) => {
+        const targetId = action.meta.arg.context_anomaly?.id.toString() || 'general';
+        const history = state.chatHistory[targetId];
+        if (history && history.length > 0) {
+          const lastIdx = history.length - 1;
+          history[lastIdx].content = "⚠️ Error communicating with Copilot backend.";
+        }
+     });
+
+     // Adaptive Guidance Handlers
+     builder.addCase(clarifyStep.fulfilled, (state, action) => {
+        const { targetId, data } = action.payload;
+        const history = state.chatHistory[targetId];
+        if (!history) return;
+        const lastIdx = history.length - 1;
+        const content = data.graph_result.final_execution_plan;
+        
+        history[lastIdx] = {
+            role: 'agent',
+            content,
+            type: 'step_clarification',
+            images: data.graph_result.retrieved_images,
+            stepData: history[lastIdx].stepData // Preserve step context
+        };
+     });
+
+     builder.addCase(submitAdaptiveStepResponse.fulfilled, (state, action) => {
+        if (!action.payload) return;
+        const { targetId, data } = action.payload;
+        const history = state.chatHistory[targetId];
+        if (!history) return;
+        const lastIdx = history.length - 1;
+        const content = data.graph_result.final_execution_plan;
+
+        history[lastIdx] = {
+            role: 'agent',
+            content,
+            type: 'branching_advice',
+            images: data.graph_result.retrieved_images,
+            stepData: history[lastIdx].stepData // Preserve step context
+        };
+     });
+   }
 });
 
 export const { 
@@ -475,7 +639,8 @@ export const {
   setSystemState, 
   setAnomalyScore,
   setActiveAgents,
-  respondToStep
+  respondToStep,
+  forceAdvanceStep
 } = copilotSlice.actions;
 
 export default copilotSlice.reducer;

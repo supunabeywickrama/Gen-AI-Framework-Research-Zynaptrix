@@ -66,7 +66,9 @@ def knowledge_retrieval_node(state: CopilotState):
     
     # HITL: Use the operator's specific query if available, otherwise default to a general summary
     user_q = state.get('user_query')
-    if user_q and "Generate full step-by-step repair procedure" in user_q:
+    if user_q and "[CLARIFY_STEP]" in user_q:
+        query = user_q # Pass through to trigger RAG clarification mode
+    elif user_q and "Generate full step-by-step repair procedure" in user_q:
         query = f"Provide the FULL structured JSON repair procedure for {state['machine_state']}."
     elif user_q and user_q.strip():
         query = f"Diagnostic Summary only for: {user_q} (Anomaly: {state['machine_state']})"
