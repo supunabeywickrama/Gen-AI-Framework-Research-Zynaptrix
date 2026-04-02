@@ -256,6 +256,7 @@ export const clarifyStep = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
           machine_id: machineId,
+          anomaly_id: targetId,
           user_query: `[CLARIFY_STEP] ${stepText}`,
           machine_state: "procedural_support"
       }),
@@ -307,6 +308,7 @@ export const submitAdaptiveStepResponse = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
           machine_id: machineId,
+          anomaly_id: targetId,
           user_query: `${tag} Task: "${stepText || step?.text || 'Current maintenance task'}". User Feedback: "${feedbackText}".`,
           machine_state: isWizard ? "guided_repair_wizard" : "troubleshooting_branch"
       }),
@@ -370,6 +372,7 @@ export const sendStepMessage = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         machine_id: machineId,
+        anomaly_id: targetId,
         user_query: wizardQuery,
         machine_state: intent === 'FREE_CHAT' ? 'general_inquiry' : 'procedural_support'
       }),

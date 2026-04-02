@@ -1652,3 +1652,237 @@ LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
 [SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
 [parameters: {'anomaly_id': None, 'role': 'agent', 'content': "[PHASE: Inspection & Repair]\n\nGreat job on completing the current maintenance task! Now, let's move on to the next step in the process. According t ... (281 characters truncated) ... unusual vibrations or noises. If you detect any abnormalities, we will need to investigate further to identify the root cause. Keep up the good work!", 'timestamp': '2026-04-02 15:31:39', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p5_img0.png"]', 'metadata': None}]
 (Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #584 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-02 15:41:41', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 584}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'agent', 'content': "The 'Machine Warning' alert is likely due to a deviation in temperature sensor readings (T-101) exceeding 15% from the moving average, which can indi ... (236 characters truncated) ...  the cooling fans and verify the lubricant's condition to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-02 15:41:47', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #584 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'user', 'content': '[CONVERSATIONAL_WIZARD] Start the guided repair procedure from the beginning.', 'timestamp': '2026-04-02 15:41:50', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 584}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'agent', 'content': "[PHASE: Safety & Lockout]\n\nBefore we dive into the repair procedure, let's ensure safety is our top priority. Begin by performing a Lockout/Tagout  ... (186 characters truncated) ... ou've confirmed that the system is safely locked out and you're properly equipped, let me know, and we'll move on to the inspection and repair phase.", 'timestamp': '2026-04-02 15:41:54', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p5_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #584 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'user', 'content': '[CONVERSATIONAL_WIZARD] I\'ve done this step successfully. (Context: CONFIRM_DONE for task "Current maintenance task")', 'timestamp': '2026-04-02 15:41:59', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 584}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'agent', 'content': "[PHASE: Inspection & Repair]\n\nGreat job on completing the current maintenance task! Now, let's move on to the next step in the process. According t ... (263 characters truncated) ... y unusual vibrations or noises. If you detect any abnormalities, we'll need to investigate further to identify the root cause. Keep up the good work!", 'timestamp': '2026-04-02 15:42:04', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p5_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #584 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'user', 'content': '[CONVERSATIONAL_WIZARD] I\'ve done this step successfully. (Context: CONFIRM_DONE for task "Current maintenance task")', 'timestamp': '2026-04-02 15:42:35', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 584}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'agent', 'content': "[PHASE: Inspection & Repair]\n\nGreat job on completing the current maintenance task! Now, let's move on to the next step in the process. According t ... (285 characters truncated) ... y unusual noises or vibrations. If you detect anything abnormal, we'll need to investigate further to identify the root cause. Keep up the good work!", 'timestamp': '2026-04-02 15:42:41', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p5_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #584 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'user', 'content': '[CONVERSATIONAL_WIZARD] Please tell me exactly how to do this step in simple terms. (Context: NEED_DETAIL for task "Great job on completing the curre ... (374 characters truncated) ... nusual noises or vibrations. If you detect anything abnormal, we\'ll need to investigate further to identify the root cause. Keep up the good work!")', 'timestamp': '2026-04-02 15:42:51', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 584}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'agent', 'content': "[PHASE: Safety & Lockout]\n\nBefore we begin analyzing the vibration of the pump, let's ensure safety first. Make sure you are wearing the appropriat ... (609 characters truncated) ... mponents, and we'll need to investigate further to pinpoint the exact cause. Keep up the great work, and don't hesitate to ask if you need more help!", 'timestamp': '2026-04-02 15:42:57', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p5_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #584 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-02 15:43:55', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 584}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 584, 'role': 'agent', 'content': "The 'Machine Warning' alert is likely due to a deviation in temperature sensor readings (T-101) exceeding 15% from the moving average, which can indi ... (239 characters truncated) ...  the cooling fans and verify the lubricant's condition to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-02 15:44:00', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #609 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 609, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-02 15:45:58', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 609}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 609, 'role': 'agent', 'content': "The 'Machine Warning' alert is likely due to a deviation in temperature sensor readings (T-101) exceeding 15% from the moving average, which suggests ... (214 characters truncated) ... s. Immediate inspection of these components is advised to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-02 15:46:03', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #735 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 735, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-02 16:27:42', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 735}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 735, 'role': 'agent', 'content': "The anomaly labeled as 'machine_fault' is likely due to a significant deviation in temperature sensor readings (T-101) exceeding 15% from the moving  ... (216 characters truncated) ... of the cooling fans and lubricant condition is advised to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-02 16:27:49', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #1007 ---
+DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 1007, 'role': 'user', 'content': 'Provide a quick diagnostic summary for this alert.', 'timestamp': '2026-04-02 19:11:48', 'images': None, 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+HISTORY_WARNING: DB offline, providing zero-shot context only: (psycopg2.errors.UndefinedColumn) column chat_history.metadata does not exist
+LINE 1: ...tamp, chat_history.images AS chat_history_images, chat_histo...
+                                                             ^
+
+[SQL: SELECT chat_history.id AS chat_history_id, chat_history.anomaly_id AS chat_history_anomaly_id, chat_history.role AS chat_history_role, chat_history.content AS chat_history_content, chat_history.timestamp AS chat_history_timestamp, chat_history.images AS chat_history_images, chat_history.metadata AS chat_history_metadata 
+FROM chat_history 
+WHERE chat_history.anomaly_id = %(anomaly_id_1)s ORDER BY chat_history.id]
+[parameters: {'anomaly_id_1': 1007}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+SUCCESS: Graph execution completed.
+DB_WARNING[AGENT_PHASE]: Storage failed: (psycopg2.errors.UndefinedColumn) column "metadata" of relation "chat_history" does not exist
+LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
+                                                             ^
+
+[SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
+[parameters: {'anomaly_id': 1007, 'role': 'agent', 'content': "The 'Machine Warning' alert is likely due to a deviation in temperature sensor readings (T-101) exceeding 15% from the moving average, which suggests ... (214 characters truncated) ... s. Immediate inspection of these components is advised to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-02 19:11:59', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'metadata': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)

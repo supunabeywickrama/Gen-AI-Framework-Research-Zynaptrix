@@ -369,6 +369,14 @@ async def stop_simulator(machine_id: str = "PUMP-001"):
         return {"status": "stopped", "machine_id": machine_id}
     return {"status": "not_running", "machine_id": machine_id}
 
+@app.post("/api/simulator/inject")
+async def inject_simulator(machine_id: str = "PUMP-001", anomaly_type: str = "machine_fault"):
+    state_file = f"simulator_{machine_id}_override.state"
+    with open(state_file, "w") as f:
+         f.write(anomaly_type)
+    logging.info(f"💉 Injecting forced {anomaly_type} for {machine_id}")
+    return {"status": "injected", "machine_id": machine_id, "anomaly_type": anomaly_type}
+
 @app.get("/api/simulator/status")
 async def get_simulator_status():
     """Returns a list of machine IDs that are currently being simulated."""
