@@ -35,6 +35,13 @@ export const stopSimulator = createAsyncThunk('simulator/stop', async (machineId
     return data;
 });
 
+export const injectAnomaly = createAsyncThunk('simulator/inject', async (payload: { machineId: string, anomalyType: string }) => {
+    const response = await fetch(`${API_BASE}/api/simulator/inject?machine_id=${payload.machineId}&anomaly_type=${payload.anomalyType}`, { method: 'POST' });
+    if (!response.ok) throw new Error('Failed to inject anomaly');
+    const data = await response.json();
+    return data;
+});
+
 const simulatorSlice = createSlice({
   name: 'simulator',
   initialState,

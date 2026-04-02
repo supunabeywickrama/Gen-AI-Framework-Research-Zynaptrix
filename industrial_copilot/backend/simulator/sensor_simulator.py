@@ -97,7 +97,7 @@ def simulate(machine_id: str = "PUMP-001", interval_seconds: float = 1.0):
                 drift_step += random.uniform(0.1, 0.5)
                 reading = sensor_drift_reading(drift_step, machine_id=machine_id)
             else:
-                reading = idle_reading()
+                reading = idle_reading(machine_id=machine_id)
 
             # Add machine context
             reading["machine_id"] = machine_id
@@ -117,10 +117,12 @@ def simulate(machine_id: str = "PUMP-001", interval_seconds: float = 1.0):
             except Exception as ex:
                 logger.error(f"  [{machine_id}] ❌ Telemetry push failed: {ex}")
 
+            # Build dynamic log string from reading
+            vals = [f"{k}={v:.2f}" for k, v in reading.items() if isinstance(v, (int, float))]
+            log_str = "  ".join(vals[:4]) + ("..." if len(vals) > 4 else "")
+            
             logger.info(
-                f"  [{machine_id:10s}] [{state:15s}] temp={reading['temperature']:.2f}°C  "
-                f"current={reading['motor_current']:.2f}A  "
-                f"vib={reading['vibration']:.3f} mm/s"
+                f"  [{machine_id:10s}] [{state:15s}] {log_str}"
             )
 
             state_counter += 1

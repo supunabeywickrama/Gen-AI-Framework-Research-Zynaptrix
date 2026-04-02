@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-// Step-by-step procedure flow is now inline in chat
 import { 
   Activity, 
   AlertTriangle, 
@@ -23,11 +22,26 @@ import {
   Maximize2,
   Minimize2,
   Wrench,
-  MessageCircle
+  MessageCircle,
+  Zap,
+  Droplets,
+  Wind,
+  Ruler,
+  Weight,
+  RotateCw,
+  Radio,
+  Sun,
+  FlaskConical,
+  Magnet,
+  Cpu,
+  TrendingUp,
+  Hash,
+  Move
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
+import { SensorMeta } from '../store/slices/machineSlice';
 import { 
   addTelemetry, 
   addChatMessage, 
@@ -39,17 +53,52 @@ import {
   fetchChatHistory,
   resolveAnomaly,
   inquireCopilot,
-  respondToStep
+  respondToStep,
+  clarifyStep,
+  submitAdaptiveStepResponse,
+  forceAdvanceStep,
+  sendStepMessage
 } from '../store/slices/copilotSlice';
-import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
+import { fetchMachines, setCurrentMachineId, fetchMachineConfig } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
+
+// ── Icon mapping: icon_type (from OpenAI) → Lucide component + accent color ──
+const ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
+  temperature:   { icon: Thermometer,  color: 'rose' },
+  current:       { icon: Zap,          color: 'amber' },
+  vibration:     { icon: VibrateIcon,  color: 'purple' },
+  pressure:      { icon: Gauge,        color: 'blue' },
+  speed:         { icon: RotateCw,     color: 'cyan' },
+  flow:          { icon: Droplets,     color: 'teal' },
+  voltage:       { icon: Zap,          color: 'yellow' },
+  humidity:      { icon: Wind,         color: 'sky' },
+  distance:      { icon: Ruler,        color: 'indigo' },
+  load:          { icon: Weight,       color: 'orange' },
+  torque:        { icon: Magnet,       color: 'pink' },
+  position:      { icon: Move,         color: 'violet' },
+  power:         { icon: TrendingUp,   color: 'emerald' },
+  frequency:     { icon: Radio,        color: 'lime' },
+  light:         { icon: Sun,          color: 'yellow' },
+  gas:           { icon: FlaskConical, color: 'green' },
+  force:         { icon: Activity,     color: 'red' },
+  conductivity:  { icon: Cpu,          color: 'fuchsia' },
+  ph:            { icon: FlaskConical, color: 'teal' },
+  weight:        { icon: Weight,       color: 'stone' },
+  angle:         { icon: Move,         color: 'cyan' },
+  counter:       { icon: Hash,         color: 'slate' },
+  generic:       { icon: Server,       color: 'blue' },
+};
+
+function getSensorDisplay(iconType: string): { icon: React.ElementType; color: string } {
+  return ICON_MAP[iconType] || ICON_MAP['generic'];
+}
 
 export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
   
   // Redux-driven State
   const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory, activeProcedure } = useSelector((state: RootState) => state.copilot);
-  const { machines, currentMachineId } = useSelector((state: RootState) => state.machines);
+  const { machines, currentMachineId, machineConfigs } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
   
   // Local transient UI states
@@ -59,11 +108,12 @@ export default function IndustrialCopilotDashboard() {
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
   const [operatorFix, setOperatorFix] = useState('');
   const [stepComments, setStepComments] = useState<Record<string, string>>({});
+  const [stepChatInputs, setStepChatInputs] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Filter telemetry points for the current machine
   const filteredTelemetry = telemetry.filter(t => t.machineId === currentMachineId);
-  const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
+  const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || {};
   
   const isSimulating = activeSimulators.includes(currentMachineId);
   const [isMounted, setIsMounted] = useState(false);
@@ -77,6 +127,7 @@ export default function IndustrialCopilotDashboard() {
   useEffect(() => {
     if (currentMachineId) {
       dispatch(fetchAnomalyHistory(currentMachineId));
+      dispatch(fetchMachineConfig(currentMachineId));
     }
   }, [currentMachineId, dispatch]);
 
@@ -113,11 +164,9 @@ export default function IndustrialCopilotDashboard() {
           if (parsed.type === "telemetry") {
             const data = parsed.data;
             dispatch(addTelemetry({
+              ...data,
               machineId: data.machine_id || 'PUMP-001',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              temperature: data.temperature,
-              current: data.motor_current,
-              vibration: data.vibration
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             }));
           } else if (parsed.type === "anomaly_alert") {
             const result = parsed.data;
@@ -146,8 +195,14 @@ export default function IndustrialCopilotDashboard() {
   }, [chatHistory, isChatOpen]);
 
   const handleManualInquiry = (customQuery?: string) => {
-    const finalQuery = customQuery || query;
+    let finalQuery = customQuery || query;
     if (!finalQuery || activeAnomaly?.resolved) return;
+    
+    // Intelligent Switch: If manual repair is requested, use the Conversational Wizard mode
+    if (finalQuery.includes("Generate full step-by-step repair procedure")) {
+        finalQuery = "[CONVERSATIONAL_WIZARD] Start the guided repair procedure from the beginning.";
+    }
+
     dispatch(inquireCopilot({
       machine_id: currentMachineId,
       query: finalQuery,
@@ -167,13 +222,79 @@ export default function IndustrialCopilotDashboard() {
     setOperatorFix('');
   };
 
-  const handleStepResponse = (stepId: string, status: string) => {
+  const handleStepResponse = (stepId: string, status: string, stepText?: string) => {
     if (!activeAnomaly) return;
+    const comment = stepComments[stepId];
     const targetId = activeAnomaly.id.toString();
-    const comment = stepComments[stepId] || undefined;
-    dispatch(respondToStep({ targetId, stepId, status, comment }));
-    // Clear the comment for this step
-    setStepComments(prev => { const n = {...prev}; delete n[stepId]; return n; });
+
+    const isWizard = stepId.startsWith('wizard_');
+
+    if (isWizard) {
+      let predefinedMessage = comment?.trim() || "";
+      if (!predefinedMessage) {
+         if (status === 'done') predefinedMessage = "I've done this step successfully.";
+         else if (status === 'cant_do') predefinedMessage = "I'm stuck with this step, please show the alternative way.";
+      }
+      
+      dispatch(sendStepMessage({
+        targetId,
+        machineId: activeAnomaly.machine_id,
+        stepId,
+        stepText: stepText || 'Current maintenance task',
+        message: predefinedMessage
+      }));
+    } else {
+      if (status === 'done' && (!comment || !comment.trim())) {
+        dispatch(respondToStep({ targetId, stepId, status: status as any }));
+      } else {
+        dispatch(submitAdaptiveStepResponse({
+          targetId,
+          machineId: activeAnomaly.machine_id,
+          stepId,
+          status,
+          comment,
+          stepText
+        }));
+      }
+    }
+    
+    setStepComments(prev => ({...prev, [stepId]: ''}));
+  };
+
+  const handleSendStepMessage = (stepId: string, stepText: string) => {
+    if (!activeAnomaly) return;
+    const msg = stepChatInputs[stepId]?.trim();
+    if (!msg) return;
+    dispatch(sendStepMessage({
+      targetId: activeAnomaly.id.toString(),
+      machineId: activeAnomaly.machine_id,
+      stepId,
+      stepText,
+      message: msg
+    }));
+    setStepChatInputs(prev => ({...prev, [stepId]: ''}));
+  };
+
+  const handleClarifyStep = (stepId: string, stepText: string) => {
+    if (!activeAnomaly) return;
+    const isWizard = stepId.startsWith('wizard_');
+    
+    if (isWizard) {
+      dispatch(sendStepMessage({
+        targetId: activeAnomaly.id.toString(),
+        machineId: activeAnomaly.machine_id,
+        stepId,
+        stepText,
+        message: "Please tell me exactly how to do this step in simple terms."
+      }));
+    } else {
+      dispatch(clarifyStep({
+        targetId: activeAnomaly.id.toString(),
+        machineId: activeAnomaly.machine_id,
+        stepText: stepText,
+        stepId: stepId
+      }));
+    }
   };
 
   // Helper: render step text with inline images
@@ -249,22 +370,57 @@ export default function IndustrialCopilotDashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 flex-1 overflow-hidden">
         
         {/* Left Aspect: Sensor Telemetry (2/3 width) */}
-        <div className="xl:col-span-2 flex flex-col gap-6 overflow-hidden">
+        <div className="xl:col-span-2 flex flex-col gap-6 overflow-hidden min-h-0">
           
           <div className="grid grid-cols-3 gap-4">
-             {[
-               { label: 'Temperature', val: latestReading.temperature.toFixed(1), unit: '°C', color: 'blue', icon: Thermometer },
-               { label: 'Motor Load', val: latestReading.current.toFixed(2), unit: 'A', color: 'emerald', icon: Gauge },
-               { label: 'Vibration', val: latestReading.vibration.toFixed(2), unit: 'mm/s', color: 'amber', icon: VibrateIcon },
-             ].map((kpi, i) => (
-               <div key={i} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
-                  <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${kpi.color}-500`}>
-                     <kpi.icon size={60} />
-                  </div>
-                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{kpi.label}</h3>
-                  <p className="text-3xl font-black text-white">{kpi.val} <span className="text-sm text-slate-600 font-light">{kpi.unit}</span></p>
-               </div>
-             ))}
+             {(() => {
+                // SensorMeta[] from machineConfigs, or derive from live telemetry, or fallback
+                const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
+                const liveSensorKeys = Object.keys(latestReading).filter(
+                  k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
+                );
+
+                // Build display list: prefer machineConfigs (has icon_type), fall back to live keys
+                let displayList: SensorMeta[] = metaList.length > 0
+                  ? metaList
+                  : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
+
+                // Last resort: defaults
+                if (displayList.length === 0) {
+                  displayList = [
+                    { sensor_id: 'temperature', sensor_name: 'Temperature', icon_type: 'temperature', unit: '°C' },
+                    { sensor_id: 'motor_current', sensor_name: 'Motor Current', icon_type: 'current', unit: 'A' },
+                    { sensor_id: 'vibration', sensor_name: 'Vibration', icon_type: 'vibration', unit: 'mm/s' },
+                  ];
+                }
+
+                const chartColors = ['blue', 'emerald', 'amber', 'purple', 'rose', 'cyan', 'teal', 'orange'];
+
+                return displayList.map((sensor, i) => {
+                  const { icon: Icon, color } = getSensorDisplay(sensor.icon_type);
+                  const rawVal = latestReading[sensor.sensor_id];
+                  const val = rawVal !== undefined ? Number(rawVal).toFixed(2) : '—';
+                  const accentColor = chartColors[i % chartColors.length];
+                  return (
+                   <div key={sensor.sensor_id} className={`bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group transition-all hover:border-slate-700`}>
+                      <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${accentColor}-500`}>
+                         <Icon size={60} />
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1.5 rounded-lg bg-${accentColor}-500/10`}>
+                          <Icon size={14} className={`text-${accentColor}-400`} />
+                        </div>
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          {sensor.sensor_name.replace(/_/g, ' ')}
+                        </h3>
+                      </div>
+                      <p className="text-3xl font-black text-white">
+                        {val} <span className="text-xs text-slate-500 font-light">{sensor.unit}</span>
+                      </p>
+                   </div>
+                  );
+                });
+             })()}
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex-1 flex flex-col">
@@ -273,9 +429,22 @@ export default function IndustrialCopilotDashboard() {
                  <Activity className="text-blue-500" /> Real-Time Sensor Stream
                </h2>
                <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500">
-                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-blue-500 rounded"></div> Temp</span>
-                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-emerald-500 rounded"></div> Load</span>
-                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-amber-500 rounded"></div> Vibr</span>
+                  {(() => {
+                    const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
+                    const liveSensorKeys = Object.keys(latestReading).filter(
+                      k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
+                    );
+                    const displayList = metaList.length > 0
+                      ? metaList
+                      : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
+                    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500', 'bg-teal-500', 'bg-orange-500'];
+                    return displayList.map((sensor, i) => (
+                      <span key={sensor.sensor_id} className="flex items-center gap-2">
+                        <div className={`h-1.5 w-4 ${colors[i % colors.length]} rounded`}></div>
+                        {sensor.sensor_name.substring(0, 5).toUpperCase()}
+                      </span>
+                    ));
+                  })()}
                </div>
             </div>
             <div className="flex-1 w-full min-h-[300px]">
@@ -288,9 +457,19 @@ export default function IndustrialCopilotDashboard() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
                     />
-                    <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} animationDuration={300} />
-                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} dot={false} animationDuration={300} />
-                    <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} animationDuration={300} />
+                    {(() => {
+                       const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
+                       const liveSensorKeys = Object.keys(latestReading).filter(
+                         k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
+                       );
+                       const displayList = metaList.length > 0
+                         ? metaList
+                         : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
+                       const colors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#06b6d4', '#14b8a6', '#f97316'];
+                       return displayList.map((sensor, i) => (
+                         <Line key={sensor.sensor_id} type="monotone" dataKey={sensor.sensor_id} stroke={colors[i % colors.length]} strokeWidth={3} dot={false} animationDuration={300} />
+                       ));
+                    })()}
                   </LineChart>
                 </ResponsiveContainer>
               )}
@@ -299,7 +478,7 @@ export default function IndustrialCopilotDashboard() {
         </div>
 
         {/* Right Aspect: Anomaly Archive (1/3 width) */}
-        <div className="flex flex-col gap-6 overflow-hidden">
+        <div className="flex flex-col gap-6 overflow-hidden min-h-0">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col h-full overflow-hidden">
             <h2 className="text-lg font-black text-white mb-6 flex items-center justify-between">
               <span className="flex items-center gap-2">
@@ -460,58 +639,78 @@ export default function IndustrialCopilotDashboard() {
                                 </div>
 
                                 <div className="p-6">
-                                  <p className="text-white text-base font-medium leading-relaxed">
+                                  {/* Human-readable step headline */}
+                                  <p className="text-white text-base font-semibold leading-relaxed">
                                     {renderStepContent(msg.content, msg.images)}
                                   </p>
 
                                   {sd.critical && !isResponded && (
                                     <div className="inline-flex items-center gap-1.5 bg-red-500/15 text-red-400 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-red-500/30 mt-3">
-                                      <AlertTriangle size={12} /> Safety Critical
+                                      <AlertTriangle size={12} /> Safety Critical — Do not skip
                                     </div>
                                   )}
 
+                                  {/* Completed State */}
                                   {isResponded && msg.stepResponse && (
-                                    <div className={`mt-4 flex items-center gap-2 text-sm font-bold ${
-                                      msg.stepResponse.status === 'done' ? 'text-emerald-400' : 'text-red-400'
+                                    <div className={`mt-5 flex items-center gap-2 text-sm font-bold rounded-xl px-4 py-3 ${
+                                      msg.stepResponse.status === 'done' 
+                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
                                     }`}>
                                       <CheckCircle size={16} />
-                                      <span className="capitalize">{msg.stepResponse.status.replace('_', ' ')}</span>
-                                      {msg.stepResponse.comment && <span className="text-slate-400 font-normal ml-2">&mdash; &quot;{msg.stepResponse.comment}&quot;</span>}
+                                      <span>{msg.stepResponse.status === 'done' ? 'Step Completed' : 'Help Requested'}</span>
+                                      {msg.stepResponse.comment && <span className="text-slate-400 font-normal ml-2 truncate">&mdash; &quot;{msg.stepResponse.comment}&quot;</span>}
                                     </div>
                                   )}
 
+                                  {/* Active Action Area */}
                                   {!isResponded && (
-                                    <div className="mt-6 space-y-4">
-                                      {isSafety ? (
-                                        <div className="flex flex-wrap gap-3">
-                                          <button onClick={() => handleStepResponse(sd.stepId, 'done')} className="flex-1 min-w-[130px] py-3 px-4 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                            <CheckCircle size={14} /> I have done
-                                          </button>
-                                          <button onClick={() => handleStepResponse(sd.stepId, 'havent_done')} className="flex-1 min-w-[130px] py-3 px-4 bg-yellow-600/20 hover:bg-yellow-600 text-yellow-400 hover:text-white border border-yellow-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                            ⏳ Haven&apos;t done
-                                          </button>
-                                          <button onClick={() => handleStepResponse(sd.stepId, 'cant_do')} className="flex-1 min-w-[130px] py-3 px-4 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                            <AlertTriangle size={14} /> Can&apos;t do it
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="space-y-3">
-                                          <input
-                                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            placeholder="Add a comment (optional)..."
-                                            value={stepComments[sd.stepId] || ''}
-                                            onChange={(e) => setStepComments(prev => ({...prev, [sd.stepId]: e.target.value}))}
-                                          />
-                                          <div className="flex gap-3">
-                                            <button onClick={() => handleStepResponse(sd.stepId, 'done')} className="flex-1 py-3 px-6 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                              <CheckCircle size={14} /> Done
-                                            </button>
-                                            <button onClick={() => handleStepResponse(sd.stepId, 'undone')} className="flex-1 py-3 px-6 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2">
-                                              <AlertTriangle size={14} /> Undone
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
+                                    <div className="mt-6 space-y-3">
+                                      {/* Quick action buttons */}
+                                      <div className="flex flex-wrap gap-2">
+                                        <button 
+                                          onClick={() => handleClarifyStep(sd.stepId, msg.content || sd.stepText || '')}
+                                          className="flex-1 py-2.5 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                        >
+                                          <MessageCircle size={13} /> Show me how
+                                        </button>
+                                        <button 
+                                          onClick={() => handleStepResponse(sd.stepId, 'cant_do', msg.content || sd.stepText)}
+                                          className="flex-1 py-2.5 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                        >
+                                          <AlertTriangle size={13} /> I&apos;m stuck
+                                        </button>
+                                        <button 
+                                          onClick={() => handleStepResponse(sd.stepId, 'done', msg.content || sd.stepText)} 
+                                          className="flex-1 py-2.5 px-3 bg-emerald-600/10 hover:bg-emerald-600 hover:text-white text-emerald-400 border border-emerald-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                        >
+                                          <CheckCircle size={13} /> I have done
+                                        </button>
+                                      </div>
+
+                                      {/* Intelligent chat bar */}
+                                      <div className="flex gap-2 items-center bg-slate-900/80 border border-slate-700/60 rounded-2xl px-4 py-3 focus-within:border-blue-500/50 transition-colors">
+                                        <input
+                                          className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                                          placeholder="Tell me what you've done, or ask a question..."
+                                          value={stepChatInputs[sd.stepId] || ''}
+                                          onChange={(e) => setStepChatInputs(prev => ({...prev, [sd.stepId]: e.target.value}))}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                              e.preventDefault();
+                                              handleSendStepMessage(sd.stepId, msg.content);
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          onClick={() => handleSendStepMessage(sd.stepId, msg.content)}
+                                          disabled={!stepChatInputs[sd.stepId]?.trim()}
+                                          className="text-blue-400 hover:text-blue-300 disabled:opacity-30 transition-all p-1"
+                                        >
+                                          <ArrowRight size={18} />
+                                        </button>
+                                      </div>
+                                      <p className="text-[10px] text-slate-600 text-center">Type naturally · Press Enter to send · AI will understand your intent</p>
                                     </div>
                                   )}
                                 </div>
@@ -544,22 +743,113 @@ export default function IndustrialCopilotDashboard() {
                           );
                         }
 
-                        // === AGENT TEXT (summary / regular) ===
+                        // === AGENT TEXT (summary / regular / clarification) ===
                         return (
                           <div key={i} className="flex justify-start">
-                            <div className="max-w-[85%] bg-slate-800 text-slate-100 border border-slate-700 rounded-3xl rounded-tl-none p-6 shadow-2xl">
+                            <div className={`max-w-[85%] rounded-3xl rounded-tl-none p-6 shadow-2xl ${
+                                msg.type === 'step_clarification' 
+                                    ? 'bg-blue-900/20 border border-blue-500/30' 
+                                    : msg.type === 'branching_advice'
+                                        ? 'bg-amber-900/20 border border-amber-500/30'
+                                        : 'bg-slate-800 text-slate-100 border border-slate-700'
+                            }`}>
+                              {msg.type === 'step_clarification' && (
+                                <div className="flex items-center gap-2 mb-4 text-blue-400 text-[10px] font-black uppercase tracking-widest">
+                                    <ShieldCheck size={14} /> AI Tutorial Detail
+                                </div>
+                              )}
+                              {msg.type === 'branching_advice' && (
+                                <div className="flex items-center gap-2 mb-4 text-amber-400 text-[10px] font-black uppercase tracking-widest">
+                                    <AlertTriangle size={14} /> Adaptive Recommendations
+                                </div>
+                              )}
                               {displayContent && (
                                 <div className="text-sm leading-relaxed space-y-3 markdown-content">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3" />) }}>
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 shadow-lg" />) }}>
                                     {displayContent}
                                   </ReactMarkdown>
                                 </div>
                               )}
-                              {hasSuggestion && !activeAnomaly?.resolved && (
+                              
+                              {/* Status Display (Consistent with StepCard) */}
+                              {msg.stepResponse && (
+                                <div className={`mt-4 flex items-center gap-2 text-sm font-bold ${
+                                  msg.stepResponse.status === 'done' ? 'text-emerald-400' : 'text-red-400'
+                                }`}>
+                                  <CheckCircle size={16} />
+                                  <span className="capitalize">{msg.stepResponse.status.replace('_', ' ')}</span>
+                                  {msg.stepResponse.comment && <span className="text-slate-400 font-normal ml-2">&mdash; &quot;{msg.stepResponse.comment}&quot;</span>}
+                                </div>
+                              )}
+
+                              {/* Start Guided Repair CTA — shown when AI suggests a procedure */}
+                              {msg.hasSuggestion && !activeAnomaly?.resolved && (
                                 <div className="mt-6 pt-5 border-t border-slate-700/50">
-                                  <button onClick={() => handleManualInquiry("Generate full step-by-step repair procedure")} className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm uppercase tracking-widest rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-95">
+                                  <button
+                                    onClick={() => handleManualInquiry("Generate full step-by-step repair procedure")}
+                                    className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm uppercase tracking-widest rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-95"
+                                  >
                                     <ShieldCheck size={20} /> 🔧 Start Guided Repair Procedure <ArrowRight size={18} />
                                   </button>
+                                </div>
+                              )}
+
+                              {/* Follow-up actions for Tutorial/Advice/Wizard (Uniform Design) */}
+                              {!msg.stepResponse && (msg.type === 'step_clarification' || msg.type === 'branching_advice' || msg.type === 'wizard_step') && (
+                                <div className="mt-6 pt-5 border-t border-slate-700/50 space-y-3">
+                                  {/* Quick action buttons — always visible on these card types */}
+                                  <div className="flex flex-wrap gap-2">
+                                    <button 
+                                      onClick={() => {
+                                        const stepId = msg.stepData?.stepId;
+                                        const stepText = msg.stepData?.stepText || msg.content;
+                                        if (stepId) handleClarifyStep(stepId, stepText);
+                                      }}
+                                      className="flex-1 py-2.5 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                    >
+                                      <MessageCircle size={13} /> Show me how
+                                    </button>
+                                    <button 
+                                      onClick={() => msg.stepData?.stepId && handleStepResponse(msg.stepData.stepId, 'cant_do')}
+                                      className="flex-1 py-2.5 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                    >
+                                      <AlertTriangle size={13} /> I&apos;m stuck
+                                    </button>
+                                    <button 
+                                      onClick={() => msg.stepData?.stepId && handleStepResponse(msg.stepData.stepId, 'done')}
+                                      className="flex-1 py-2.5 px-3 bg-emerald-600/10 hover:bg-emerald-600 hover:text-white text-emerald-400 border border-emerald-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                    >
+                                      <CheckCircle size={13} /> I have done
+                                    </button>
+                                  </div>
+
+                                  {/* Intelligent chat bar — same as step cards */}
+                                  {msg.stepData?.stepId && (
+                                    <>
+                                      <div className="flex gap-2 items-center bg-slate-900/80 border border-slate-700/60 rounded-2xl px-4 py-3 focus-within:border-blue-500/50 transition-colors">
+                                        <input
+                                          className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                                          placeholder="Tell me what you've done, or ask a question..."
+                                          value={stepChatInputs[msg.stepData.stepId] || ''}
+                                          onChange={(e) => setStepChatInputs(prev => ({...prev, [msg.stepData!.stepId]: e.target.value}))}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey && msg.stepData?.stepId) {
+                                              e.preventDefault();
+                                              handleSendStepMessage(msg.stepData.stepId, msg.stepData.stepText || msg.content);
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          onClick={() => msg.stepData?.stepId && handleSendStepMessage(msg.stepData.stepId, msg.stepData.stepText || msg.content)}
+                                          disabled={!msg.stepData?.stepId || !stepChatInputs[msg.stepData.stepId]?.trim()}
+                                          className="text-blue-400 hover:text-blue-300 disabled:opacity-30 transition-all p-1"
+                                        >
+                                          <ArrowRight size={18} />
+                                        </button>
+                                      </div>
+                                      <p className="text-[10px] text-slate-600 text-center">Type naturally · Press Enter to send · AI will understand your intent</p>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </div>

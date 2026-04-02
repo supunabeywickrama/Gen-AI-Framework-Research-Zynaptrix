@@ -27,10 +27,13 @@ def fit_scaler(df: pd.DataFrame) -> StandardScaler:
     """
     Fit a StandardScaler on normal-state data only.
     """
+    # Detect sensor columns (all numeric columns except metadata)
+    sensor_cols = [c for c in df.columns if c not in ["timestamp", "machine_id", "state"]]
+    
     if "state" in df.columns:
-        fit_df = df[df["state"] == "normal"][SENSOR_COLUMNS]
+        fit_df = df[df["state"] == "normal"][sensor_cols]
     else:
-        fit_df = df[SENSOR_COLUMNS]
+        fit_df = df[sensor_cols]
 
     scaler = StandardScaler()
     scaler.fit(fit_df)
@@ -51,7 +54,8 @@ def load_scaler(machine_id: str = "PUMP-001") -> StandardScaler:
 def normalize(df: pd.DataFrame, scaler: StandardScaler) -> pd.DataFrame:
     """Return a copy of df with sensor columns standardized."""
     df = df.copy()
-    df[SENSOR_COLUMNS] = scaler.transform(df[SENSOR_COLUMNS])
+    sensor_cols = [c for c in df.columns if c not in ["timestamp", "machine_id", "state"]]
+    df[sensor_cols] = scaler.transform(df[sensor_cols])
     return df
 
 def fit_and_normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, StandardScaler]:
