@@ -44,10 +44,20 @@ logger = logging.getLogger(__name__)
 def pick_state(current_state: str, drift_counter: list) -> str:
     """
     State machine transition.
-    Normally streams 'normal' data endlessly until externally requested
-    via IPC files.
+    Once in a fault/freeze/drift state, persist for a random burst
+    to simulate realistic event duration.
     """
-    return "normal"
+    r = random.random()
+    if r < 0.70:
+        return "normal"
+    elif r < 0.85:
+        return "machine_fault"
+    elif r < 0.93:
+        return "sensor_freeze"
+    elif r < 0.97:
+        return "sensor_drift"
+    else:
+        return "idle"
 
 
 def simulate(machine_id: str = "PUMP-001", interval_seconds: float = 1.0):
@@ -65,27 +75,14 @@ def simulate(machine_id: str = "PUMP-001", interval_seconds: float = 1.0):
 
     try:
         while True:
-            # Check IPC for explicitly injected anomalies
-            state_file = f"simulator_{machine_id}_override.state"
-            if os.path.exists(state_file):
-                try:
-                    with open(state_file, "r") as f:
-                        state = f.read().strip()
-                    os.remove(state_file)
-                    state_duration = 15  # Persist the injected fault for 15 ticks
-                    state_counter = 0
-                    frozen_snapshot = None
-                    logger.warning(f"  [{machine_id}] ⚠️ IPC COMMAND: Forced {state} injection")
-                except Exception:
-                    pass
-
-            # Transition back to normal automatically after the burst duration ends
-            if state != "normal" and state_counter >= state_duration:
-                state = "normal"
+            # Transition state
+            if state_counter >= state_duration:
+                state = pick_state(state, [])
+                state_duration = random.randint(3, 30)   # persist state for 3–30 ticks
                 state_counter = 0
                 drift_step = 0.0
                 frozen_snapshot = None
-                logger.info(f"  [{machine_id}] → State reverted back to normal automatically.")
+                logger.info(f"  [{machine_id}] → State changed to: {state} (duration: {state_duration}s)")
 
             # Generate reading
             if state == "normal":

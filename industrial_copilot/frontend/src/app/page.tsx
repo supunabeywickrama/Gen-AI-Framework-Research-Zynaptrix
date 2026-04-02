@@ -46,7 +46,7 @@ import {
   sendStepMessage
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
-import { fetchSimulatorStatus, startSimulator, stopSimulator, injectAnomaly } from '../store/slices/simulatorSlice';
+import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
 
 export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
@@ -319,15 +319,6 @@ export default function IndustrialCopilotDashboard() {
               {isSimulating ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
               {isSimulating ? "Stop" : "Start"}
           </button>
-          
-          {isSimulating && (
-            <button
-                onClick={() => dispatch(injectAnomaly({ machineId: currentMachineId, anomalyType: 'machine_fault' }))}
-                className="px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 shadow-2xl bg-amber-500/10 text-amber-500 border border-amber-500/30 hover:bg-amber-500/20 active:scale-95"
-            >
-                <Activity size={12} /> Inject Fault
-            </button>
-          )}
         </div>
       </header>
 

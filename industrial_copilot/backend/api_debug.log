@@ -1886,3 +1886,43 @@ LINE 1: ...ry (anomaly_id, role, content, timestamp, images, metadata) ...
 [SQL: INSERT INTO chat_history (anomaly_id, role, content, timestamp, images, metadata) VALUES (%(anomaly_id)s, %(role)s, %(content)s, %(timestamp)s, %(images)s, %(metadata)s) RETURNING chat_history.id]
 [parameters: {'anomaly_id': 1007, 'role': 'agent', 'content': "The 'Machine Warning' alert is likely due to a deviation in temperature sensor readings (T-101) exceeding 15% from the moving average, which suggests ... (214 characters truncated) ... s. Immediate inspection of these components is advised to prevent further complications.\n\n[SUGGESTION: Generate full step-by-step repair procedure]", 'timestamp': '2026-04-02 19:11:59', 'images': '["http://localhost:8000/static/extracted/turbo_pump_manual_v1_p15_img0.png"]', 'metadata': None}]
 (Background on this error at: https://sqlalche.me/e/20/f405)
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 1 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 3 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 5 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 7 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 9 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 11 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 13 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 15 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
