@@ -78,6 +78,7 @@ export interface ChatMessage {
   stepData?: StepData;
   stepResponse?: StepResponse;
   isDocAlert?: boolean; // New flag for documentation-gap warnings
+  metadata?: any;
 }
 
 export interface AnomalyRecord {

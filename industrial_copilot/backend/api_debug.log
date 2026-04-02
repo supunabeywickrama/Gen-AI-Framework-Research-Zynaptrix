@@ -2233,3 +2233,8 @@ SUCCESS: Agent response stored for ID 1019.
 CONTEXT: Hydrated 6 previous messages for incident 1019.
 SUCCESS: Graph execution completed.
 SUCCESS: Agent response stored for ID 1019.
+
+--- INQUIRY START: Anomaly #1020 ---
+CONTEXT: Hydrated 0 previous messages for incident 1020.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1020.

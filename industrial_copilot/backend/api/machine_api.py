@@ -122,7 +122,7 @@ async def resolve_incident(anomaly_id: int, req: ResolveRequest):
         emb_res = openai.embeddings.create(input=summary, model="text-embedding-3-small")
         embedding = emb_res.data[0].embedding
         
-        # 5. Store in InteractionMemory registry
+        # 5. Store in InteractionMemory registry (for RAG)
         mem = InteractionMemory(
             machine_id=record.machine_id,
             manual_id="Historical_Knowledge",
@@ -132,6 +132,17 @@ async def resolve_incident(anomaly_id: int, req: ResolveRequest):
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
         db.add(mem)
+
+        # 6. Store as a ChatMessage (for word-for-word history & archival view)
+        summary_msg = ChatMessage(
+            anomaly_id=anomaly_id,
+            role='agent',
+            content=f"### 🏁 Final Completion Report\n\n**Technical Summary**:\n{summary}\n\n**Operator Notes**:\n{req.operator_fix}",
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            message_metadata=json.dumps({"type": "final_summary"})
+        )
+        db.add(summary_msg)
+
         db.commit()
         return {"status": "resolved_and_archived", "summary": summary}
     except Exception as e:
