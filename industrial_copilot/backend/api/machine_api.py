@@ -42,6 +42,7 @@ class AnomalyResponse(BaseModel):
     type: str
     score: int
     sensor_data: str # JSON backend
+    resolved: bool
 
     class Config:
         from_attributes = True
@@ -142,7 +143,10 @@ async def resolve_incident(anomaly_id: int, req: ResolveRequest):
             message_metadata=json.dumps({"type": "final_summary"})
         )
         db.add(summary_msg)
-
+        
+        # 7. Mark as resolved in DB
+        record.resolved = True
+        
         db.commit()
         return {"status": "resolved_and_archived", "summary": summary}
     except Exception as e:

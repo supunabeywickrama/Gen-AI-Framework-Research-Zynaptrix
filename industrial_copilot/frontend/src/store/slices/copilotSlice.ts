@@ -679,10 +679,18 @@ const copilotSlice = createSlice({
         if (state.activeAnomaly?.id === anomalyId) {
           state.activeAnomaly = null;
         }
-        // Remove from active state (History is already updated in anomalyHistory)
+
+        // Update the item in anomalyHistory to reflect resolved status immediately
+        const idx = state.anomalyHistory.findIndex(a => a.id === anomalyId);
+        if (idx !== -1) {
+            state.anomalyHistory[idx].resolved = true;
+        }
+
+        // Cleanup local transient state
         delete state.chatHistory[anomalyId.toString()];
         delete state.activeProcedure[anomalyId.toString()];
     })
+
     // --- Assistant Cases ---
     .addCase(inquireAssistant.pending, (state) => {
         // Option to add a 'thinking' state if needed
