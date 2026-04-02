@@ -2,6 +2,7 @@ import logging
 import os
 from typing import TypedDict, Dict, Any, Optional, List
 from langgraph.graph import StateGraph, END
+from unified_rag.retrieval.rag import RAGMode
 
 # EXPLICITLY IMPORTING THE IMPROVED RAG SYSTEM HERE!
 try:
@@ -34,6 +35,7 @@ class CopilotState(TypedDict):
     strategy_report: str
     critic_feedback: str
     final_execution_plan: str
+    chat_history: Optional[str]  # The current conversation string for the RAG Wizard
 
 def sensor_status_node(state: CopilotState):
     """
@@ -65,12 +67,23 @@ def knowledge_retrieval_node(state: CopilotState):
     machine_id = state.get('machine_id', 'PUMP-001')
     
     # HITL: Use the operator's specific query if available, otherwise default to a general summary
-    user_q = state.get('user_query')
-    if user_q and "[CLARIFY_STEP]" in user_q:
-        query = user_q # Pass through to trigger RAG clarification mode
-    elif user_q and "Generate full step-by-step repair procedure" in user_q:
-        query = f"Provide the FULL structured JSON repair procedure for {state['machine_state']}."
-    elif user_q and user_q.strip():
+    user_q = state.get('user_query', '')
+    mode = RAGMode.SUMMARY
+    query = user_q
+
+    if "[CLARIFY_STEP]" in user_q:
+        mode = RAGMode.CLARIFICATION
+        query = user_q.replace("[CLARIFY_STEP]", "").strip()
+    elif "[EVALUATE_STEP]" in user_q:
+        mode = RAGMode.EVALUATION
+        query = user_q.replace("[EVALUATE_STEP]", "").strip()
+    elif "[CONVERSATIONAL_WIZARD]" in user_q or "Generate full step-by-step repair procedure" in user_q:
+        # This is the new Intelligent Navigator
+        mode = RAGMode.CONVERSATIONAL_WIZARD
+        query = user_q.replace("[CONVERSATIONAL_WIZARD]", "").strip()
+        if not query:
+            query = "Provide the first instruction from the repair manual."
+    elif user_q.strip():
         query = f"Diagnostic Summary only for: {user_q} (Anomaly: {state['machine_state']})"
     else:
         query = f"Provide a brief diagnostic summary and status for {state['machine_state']}."
@@ -88,8 +101,14 @@ def knowledge_retrieval_node(state: CopilotState):
             manual_id = machine_record.manual_id if machine_record else "Zynaptrix_9000"
             db.close()
             
-            logger.info(f"🔍 [RAG Routing] Machine {machine_id} resolved to Manual: {manual_id}")
-            rag_response = rag_gen.generate_response(query, manual_id, machine_id)
+            logger.info(f"🔍 [RAG Routing] Machine {machine_id} resolved to Manual: {manual_id} (Mode: {mode})")
+            rag_response = rag_gen.generate_response(
+                query, 
+                manual_id, 
+                machine_id, 
+                mode=mode, 
+                chat_history=state.get('chat_history', '')
+            )
             
             # API URL configuration with dynamic fallback
             api_url = os.getenv("API_URL", "http://127.0.0.1:8000")

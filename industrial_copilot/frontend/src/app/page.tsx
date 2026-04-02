@@ -42,7 +42,8 @@ import {
   respondToStep,
   clarifyStep,
   submitAdaptiveStepResponse,
-  forceAdvanceStep
+  forceAdvanceStep,
+  sendStepMessage
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
@@ -62,6 +63,7 @@ export default function IndustrialCopilotDashboard() {
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
   const [operatorFix, setOperatorFix] = useState('');
   const [stepComments, setStepComments] = useState<Record<string, string>>({});
+  const [stepChatInputs, setStepChatInputs] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Filter telemetry points for the current machine
@@ -149,8 +151,14 @@ export default function IndustrialCopilotDashboard() {
   }, [chatHistory, isChatOpen]);
 
   const handleManualInquiry = (customQuery?: string) => {
-    const finalQuery = customQuery || query;
+    let finalQuery = customQuery || query;
     if (!finalQuery || activeAnomaly?.resolved) return;
+    
+    // Intelligent Switch: If manual repair is requested, use the Conversational Wizard mode
+    if (finalQuery.includes("Generate full step-by-step repair procedure")) {
+        finalQuery = "[CONVERSATIONAL_WIZARD] Start the guided repair procedure from the beginning.";
+    }
+
     dispatch(inquireCopilot({
       machine_id: currentMachineId,
       query: finalQuery,
@@ -170,31 +178,79 @@ export default function IndustrialCopilotDashboard() {
     setOperatorFix('');
   };
 
-  const handleStepResponse = (stepId: string, status: string) => {
+  const handleStepResponse = (stepId: string, status: string, stepText?: string) => {
     if (!activeAnomaly) return;
+    const comment = stepComments[stepId];
     const targetId = activeAnomaly.id.toString();
-    const comment = stepComments[stepId] || undefined;
+
+    const isWizard = stepId === 'wizard_flow' || stepId === 'wizard_step';
+
+    if (isWizard) {
+      let predefinedMessage = comment?.trim() || "";
+      if (!predefinedMessage) {
+         if (status === 'done') predefinedMessage = "I've done this step successfully.";
+         else if (status === 'cant_do') predefinedMessage = "I'm stuck with this step, please show the alternative way.";
+      }
+      
+      dispatch(sendStepMessage({
+        targetId,
+        machineId: activeAnomaly.machine_id,
+        stepId,
+        stepText: stepText || 'Current maintenance task',
+        message: predefinedMessage
+      }));
+    } else {
+      if (status === 'done' && (!comment || !comment.trim())) {
+        dispatch(respondToStep({ targetId, stepId, status: status as any }));
+      } else {
+        dispatch(submitAdaptiveStepResponse({
+          targetId,
+          machineId: activeAnomaly.machine_id,
+          stepId,
+          status,
+          comment,
+          stepText
+        }));
+      }
+    }
     
-    // Use the adaptive response thunk to trigger AI help if needed
-    dispatch(submitAdaptiveStepResponse({ 
-      targetId, 
-      machineId: currentMachineId,
-      stepId, 
-      status, 
-      comment 
+    setStepComments(prev => ({...prev, [stepId]: ''}));
+  };
+
+  const handleSendStepMessage = (stepId: string, stepText: string) => {
+    if (!activeAnomaly) return;
+    const msg = stepChatInputs[stepId]?.trim();
+    if (!msg) return;
+    dispatch(sendStepMessage({
+      targetId: activeAnomaly.id.toString(),
+      machineId: activeAnomaly.machine_id,
+      stepId,
+      stepText,
+      message: msg
     }));
-    
-    setStepComments(prev => { const n = {...prev}; delete n[stepId]; return n; });
+    setStepChatInputs(prev => ({...prev, [stepId]: ''}));
   };
 
   const handleClarifyStep = (stepId: string, stepText: string) => {
     if (!activeAnomaly) return;
-    dispatch(clarifyStep({
-      targetId: activeAnomaly.id.toString(),
-      machineId: currentMachineId,
-      stepText: stepText,
-      stepId: stepId
-    }));
+    const isWizard = stepId === 'wizard_flow' || stepId === 'wizard_step';
+    
+    if (isWizard) {
+      dispatch(sendStepMessage({
+        targetId: activeAnomaly.id.toString(),
+        machineId: activeAnomaly.machine_id,
+        stepId,
+        stepText,
+        message: "Please tell me exactly how to do this step in simple terms."
+      }));
+    } else {
+      dispatch(clarifyStep({
+        targetId: activeAnomaly.id.toString(),
+        machineId: activeAnomaly.machine_id,
+        stepText: stepText,
+        stepId: stepId
+      }));
+    }
   };
 
   // Helper: render step text with inline images
@@ -481,58 +537,78 @@ export default function IndustrialCopilotDashboard() {
                                 </div>
 
                                 <div className="p-6">
-                                  <p className="text-white text-base font-medium leading-relaxed">
+                                  {/* Human-readable step headline */}
+                                  <p className="text-white text-base font-semibold leading-relaxed">
                                     {renderStepContent(msg.content, msg.images)}
                                   </p>
 
                                   {sd.critical && !isResponded && (
                                     <div className="inline-flex items-center gap-1.5 bg-red-500/15 text-red-400 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-red-500/30 mt-3">
-                                      <AlertTriangle size={12} /> Safety Critical
+                                      <AlertTriangle size={12} /> Safety Critical — Do not skip
                                     </div>
                                   )}
 
+                                  {/* Completed State */}
                                   {isResponded && msg.stepResponse && (
-                                    <div className={`mt-4 flex items-center gap-2 text-sm font-bold ${
-                                      msg.stepResponse.status === 'done' ? 'text-emerald-400' : 'text-red-400'
+                                    <div className={`mt-5 flex items-center gap-2 text-sm font-bold rounded-xl px-4 py-3 ${
+                                      msg.stepResponse.status === 'done' 
+                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
                                     }`}>
                                       <CheckCircle size={16} />
-                                      <span className="capitalize">{msg.stepResponse.status.replace('_', ' ')}</span>
-                                      {msg.stepResponse.comment && <span className="text-slate-400 font-normal ml-2">&mdash; &quot;{msg.stepResponse.comment}&quot;</span>}
+                                      <span>{msg.stepResponse.status === 'done' ? 'Step Completed' : 'Help Requested'}</span>
+                                      {msg.stepResponse.comment && <span className="text-slate-400 font-normal ml-2 truncate">&mdash; &quot;{msg.stepResponse.comment}&quot;</span>}
                                     </div>
                                   )}
 
+                                  {/* Active Action Area */}
                                   {!isResponded && (
                                     <div className="mt-6 space-y-3">
+                                      {/* Quick action buttons */}
                                       <div className="flex flex-wrap gap-2">
                                         <button 
-                                          onClick={() => handleClarifyStep(sd.stepId, msg.content)}
-                                          className="flex-1 py-3 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                          onClick={() => handleClarifyStep(sd.stepId, msg.content || sd.stepText || '')}
+                                          className="flex-1 py-2.5 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
                                         >
-                                          <MessageCircle size={14} /> Show me how
+                                          <MessageCircle size={13} /> Show me how
                                         </button>
                                         <button 
-                                          onClick={() => handleStepResponse(sd.stepId, 'cant_do')}
-                                          className="flex-1 py-3 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                          onClick={() => handleStepResponse(sd.stepId, 'cant_do', msg.content || sd.stepText)}
+                                          className="flex-1 py-2.5 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
                                         >
-                                          <AlertTriangle size={14} /> I&apos;m stuck
+                                          <AlertTriangle size={13} /> I&apos;m stuck
+                                        </button>
+                                        <button 
+                                          onClick={() => handleStepResponse(sd.stepId, 'done', msg.content || sd.stepText)} 
+                                          className="flex-1 py-2.5 px-3 bg-emerald-600/10 hover:bg-emerald-600 hover:text-white text-emerald-400 border border-emerald-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                        >
+                                          <CheckCircle size={13} /> I have done
                                         </button>
                                       </div>
 
-                                      {!isSafety && (
+                                      {/* Intelligent chat bar */}
+                                      <div className="flex gap-2 items-center bg-slate-900/80 border border-slate-700/60 rounded-2xl px-4 py-3 focus-within:border-blue-500/50 transition-colors">
                                         <input
-                                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                          placeholder="Add a comment (optional)..."
-                                          value={stepComments[sd.stepId] || ''}
-                                          onChange={(e) => setStepComments(prev => ({...prev, [sd.stepId]: e.target.value}))}
+                                          className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                                          placeholder="Tell me what you've done, or ask a question..."
+                                          value={stepChatInputs[sd.stepId] || ''}
+                                          onChange={(e) => setStepChatInputs(prev => ({...prev, [sd.stepId]: e.target.value}))}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                              e.preventDefault();
+                                              handleSendStepMessage(sd.stepId, msg.content);
+                                            }
+                                          }}
                                         />
-                                      )}
-
-                                      <button 
-                                        onClick={() => handleStepResponse(sd.stepId, 'done')} 
-                                        className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2"
-                                      >
-                                        <CheckCircle size={18} /> {isSafety ? 'I have done' : 'Mark as Done'}
-                                      </button>
+                                        <button
+                                          onClick={() => handleSendStepMessage(sd.stepId, msg.content)}
+                                          disabled={!stepChatInputs[sd.stepId]?.trim()}
+                                          className="text-blue-400 hover:text-blue-300 disabled:opacity-30 transition-all p-1"
+                                        >
+                                          <ArrowRight size={18} />
+                                        </button>
+                                      </div>
+                                      <p className="text-[10px] text-slate-600 text-center">Type naturally · Press Enter to send · AI will understand your intent</p>
                                     </div>
                                   )}
                                 </div>
@@ -604,37 +680,74 @@ export default function IndustrialCopilotDashboard() {
                                 </div>
                               )}
 
-                              {/* Follow-up actions for Tutorial/Advice (Uniform Design) */}
-                              {!msg.stepResponse && (msg.type === 'step_clarification' || msg.type === 'branching_advice') && msg.stepData?.stepId && (
-                                <div className="mt-6 pt-5 border-t border-slate-700/50 space-y-3">
-                                   <div className="flex flex-wrap gap-2">
-                                      <button 
-                                          onClick={() => handleClarifyStep(msg.stepData!.stepId, msg.content)}
-                                          className="flex-1 py-3 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
-                                      >
-                                          <MessageCircle size={14} /> Show me how
-                                      </button>
-                                      <button 
-                                          onClick={() => handleStepResponse(msg.stepData!.stepId, 'cant_do')}
-                                          className="flex-1 py-3 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
-                                      >
-                                          <AlertTriangle size={14} /> I&apos;m stuck
-                                      </button>
-                                   </div>
-                                   <button 
-                                      onClick={() => handleStepResponse(msg.stepData!.stepId, 'done')}
-                                      className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2"
-                                   >
-                                      <CheckCircle size={18} /> Mark as Done
-                                   </button>
+                              {/* Start Guided Repair CTA — shown when AI suggests a procedure */}
+                              {msg.hasSuggestion && !activeAnomaly?.resolved && (
+                                <div className="mt-6 pt-5 border-t border-slate-700/50">
+                                  <button
+                                    onClick={() => handleManualInquiry("Generate full step-by-step repair procedure")}
+                                    className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm uppercase tracking-widest rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-95"
+                                  >
+                                    <ShieldCheck size={20} /> 🔧 Start Guided Repair Procedure <ArrowRight size={18} />
+                                  </button>
                                 </div>
                               )}
 
-                              {hasSuggestion && !activeAnomaly?.resolved && msg.type !== 'branching_advice' && (
-                                <div className="mt-6 pt-5 border-t border-slate-700/50">
-                                  <button onClick={() => handleManualInquiry("Generate full step-by-step repair procedure")} className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black text-sm uppercase tracking-widest rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-95">
-                                    <ShieldCheck size={20} /> 🔧 Start Guided Repair Procedure <ArrowRight size={18} />
-                                  </button>
+                              {/* Follow-up actions for Tutorial/Advice/Wizard (Uniform Design) */}
+                              {!msg.stepResponse && (msg.type === 'step_clarification' || msg.type === 'branching_advice' || msg.type === 'wizard_step') && (
+                                <div className="mt-6 pt-5 border-t border-slate-700/50 space-y-3">
+                                  {/* Quick action buttons — always visible on these card types */}
+                                  <div className="flex flex-wrap gap-2">
+                                    <button 
+                                      onClick={() => {
+                                        const stepId = msg.stepData?.stepId;
+                                        const stepText = msg.stepData?.stepText || msg.content;
+                                        if (stepId) handleClarifyStep(stepId, stepText);
+                                      }}
+                                      className="flex-1 py-2.5 px-3 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                    >
+                                      <MessageCircle size={13} /> Show me how
+                                    </button>
+                                    <button 
+                                      onClick={() => msg.stepData?.stepId && handleStepResponse(msg.stepData.stepId, 'cant_do')}
+                                      className="flex-1 py-2.5 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                    >
+                                      <AlertTriangle size={13} /> I&apos;m stuck
+                                    </button>
+                                    <button 
+                                      onClick={() => msg.stepData?.stepId && handleStepResponse(msg.stepData.stepId, 'done')}
+                                      className="flex-1 py-2.5 px-3 bg-emerald-600/10 hover:bg-emerald-600 hover:text-white text-emerald-400 border border-emerald-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                    >
+                                      <CheckCircle size={13} /> I have done
+                                    </button>
+                                  </div>
+
+                                  {/* Intelligent chat bar — same as step cards */}
+                                  {msg.stepData?.stepId && (
+                                    <>
+                                      <div className="flex gap-2 items-center bg-slate-900/80 border border-slate-700/60 rounded-2xl px-4 py-3 focus-within:border-blue-500/50 transition-colors">
+                                        <input
+                                          className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
+                                          placeholder="Tell me what you've done, or ask a question..."
+                                          value={stepChatInputs[msg.stepData.stepId] || ''}
+                                          onChange={(e) => setStepChatInputs(prev => ({...prev, [msg.stepData!.stepId]: e.target.value}))}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey && msg.stepData?.stepId) {
+                                              e.preventDefault();
+                                              handleSendStepMessage(msg.stepData.stepId, msg.stepData.stepText || msg.content);
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          onClick={() => msg.stepData?.stepId && handleSendStepMessage(msg.stepData.stepId, msg.stepData.stepText || msg.content)}
+                                          disabled={!msg.stepData?.stepId || !stepChatInputs[msg.stepData.stepId]?.trim()}
+                                          className="text-blue-400 hover:text-blue-300 disabled:opacity-30 transition-all p-1"
+                                        >
+                                          <ArrowRight size={18} />
+                                        </button>
+                                      </div>
+                                      <p className="text-[10px] text-slate-600 text-center">Type naturally · Press Enter to send · AI will understand your intent</p>
+                                    </>
+                                  )}
                                 </div>
                               )}
                             </div>

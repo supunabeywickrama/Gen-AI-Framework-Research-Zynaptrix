@@ -40,6 +40,7 @@ export interface StepData {
   stepIndex: number;
   totalSteps: number;
   critical?: boolean;
+  stepText?: string;
 }
 
 export interface StepResponse {
@@ -73,8 +74,9 @@ export interface ChatMessage {
   machineId?: string;
   quickActions?: string[];
   dbId?: number;
+  hasSuggestion?: boolean;
   // Step-by-step interactive
-  type?: 'text' | 'step' | 'phase_header' | 'procedure_complete' | 'step_clarification' | 'branching_advice';
+  type?: 'text' | 'step' | 'phase_header' | 'procedure_complete' | 'step_clarification' | 'branching_advice' | 'wizard_step';
   stepData?: StepData;
   stepResponse?: StepResponse;
 }
@@ -205,7 +207,7 @@ export const inquireCopilot = createAsyncThunk(
     dispatch(addChatMessage({ 
         role: 'agent', 
         content: '⏳ Analyzing incident context...',
-        targetId
+        targetId: targetId
     }));
 
     const body = {
@@ -225,88 +227,163 @@ export const inquireCopilot = createAsyncThunk(
 
     if (!response.ok) throw new Error('Copilot inquiry failed');
     const data = await response.json();
+
+    // Check for backend-level errors
+    if (data.status === 'error' || !data.graph_result) {
+        throw new Error(data.message || 'Orchestration failure from AI engine');
+    }
+
     return data;
   }
 );
 
 export const clarifyStep = createAsyncThunk(
   'copilot/clarifyStep',
-  async (payload: { targetId: string; machineId: string; stepText: string; stepId: string }, { dispatch }) => {
-    // Add user message: "Show me how"
+  async (payload: { targetId: string; machineId: string; stepId: string; stepText: string }, { dispatch }) => {
+    const { targetId, machineId, stepId, stepText } = payload;
+    
+    // 1. User message
     dispatch(addChatMessage({ 
         role: 'user', 
-        content: `I need more detail on: "${payload.stepText}"`,
-        targetId: payload.targetId 
+        content: `Show me how: "${stepText}"`,
+        targetId 
     }));
 
-    // Add placeholder
-    dispatch(addChatMessage({ 
-        role: 'agent', 
-        content: '🔍 Retrieving detailed manual instructions...',
-        targetId: payload.targetId,
-        type: 'step_clarification',
-        stepData: {
-          stepId: payload.stepId,
-          stepText: payload.stepText
-        } as any
-    }));
+    // 2. We don't need a placeholder. The fulfilled handler will just push to history instead of overwriting.
 
     const response = await fetch(`${API_BASE}/api/copilot/invoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-          machine_id: payload.machineId,
-          user_query: `[CLARIFY_STEP] ${payload.stepText}`,
-          machine_state: "clarification_request"
+          machine_id: machineId,
+          user_query: `[CLARIFY_STEP] ${stepText}`,
+          machine_state: "procedural_support"
       }),
     });
 
-    if (!response.ok) throw new Error('Clarification failed');
-    return { targetId: payload.targetId, data: await response.json() };
+    // Return stepId + stepText so fulfilled handler can reconstruct stepData
+    return { targetId, stepId, stepText, data: await response.json() };
   }
 );
 
 export const submitAdaptiveStepResponse = createAsyncThunk(
   'copilot/adaptiveResponse',
-  async (payload: { targetId: string; machineId: string; stepId: string; status: string; comment?: string }, { dispatch, getState }) => {
-    const { targetId, machineId, stepId, status, comment } = payload;
+  async (payload: { targetId: string; machineId: string; stepId: string; status: string; comment?: string; stepText?: string }, { dispatch, getState }) => {
+    const { targetId, machineId, stepId, status, comment, stepText } = payload;
     
-    // 1. Dispatch the local response first to keep UI responsive
-    dispatch(respondToStep({ targetId, stepId, status, comment }));
+    const isWizard = stepId === 'wizard_flow' || stepId === 'wizard_step';
 
-    // 2. If status is 'undone' or 'cant_do', ask AI for branching path
-    if (status === 'undone' || status === 'cant_do') {
-        const state = getState() as { copilot: CopilotState };
-        const proc = state.copilot.activeProcedure[targetId];
-        const step = proc.flatSteps.find(s => s.id === stepId);
-        
-        dispatch(addChatMessage({ 
-            role: 'agent', 
-            content: '🤔 I see you had trouble with that. Searching for an alternative approach...',
-            targetId,
-            type: 'branching_advice',
-            stepData: {
-              stepId: payload.stepId,
-              stepText: step?.text || ''
-            } as any
-        }));
-
-        const response = await fetch(`${API_BASE}/api/copilot/invoke`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-              machine_id: machineId,
-              user_query: `I could not complete step "${step?.text}". Reason: ${comment || 'unknown'}. What should I check next?`,
-              machine_state: "troubleshooting_branch"
-          }),
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            return { targetId, data };
-        }
+    // CASE A: Done with NO comment -> FAST TRACK (Only for fixed procedures)
+    if (!isWizard && status === 'done' && (!comment || !comment.trim())) {
+        dispatch(respondToStep({ targetId, stepId, status: 'done' }));
+        return { targetId, data: null, stepId, stepText: '' };
     }
-    return null;
+
+    // CASE B: Evaluation or Branching Request
+    const state = getState() as { copilot: CopilotState };
+    const proc = state.copilot.activeProcedure[targetId];
+    const step = proc?.flatSteps?.find(s => s.id === stepId);
+    
+    const labels: Record<string, string> = {
+      'done': "✅ I've done this step",
+      'undone': '❌ Not completed',
+      'cant_do': "⚠️ I'm stuck / Unable to perform",
+      'havent_done': "⏳ Not done yet",
+    };
+    let userMsg = labels[status] || status;
+    if (comment && comment.trim()) userMsg += `\n💬 "${comment}"`;
+    
+    dispatch(addChatMessage({ 
+        role: 'user', 
+        content: userMsg,
+        targetId 
+    }));
+
+    const feedbackText = comment?.trim() ? comment : (status === 'done' ? "I've done this step successfully." : 'Operator is stuck and needs alternative ways or deeper troubleshooting for this task.');
+    const tag = status === 'done' ? '[EVALUATE_STEP]' : '[STUCK_STEP]';
+
+    const response = await fetch(`${API_BASE}/api/copilot/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+          machine_id: machineId,
+          user_query: `${tag} Task: "${stepText || step?.text || 'Current maintenance task'}". User Feedback: "${feedbackText}".`,
+          machine_state: isWizard ? "guided_repair_wizard" : "troubleshooting_branch"
+      }),
+    });
+
+    const data = await response.json();
+    const content = data.graph_result.final_execution_plan;
+
+    // AUTO-ADVANCE on [STEP_COMPLETE] for legacy flows
+    if (!isWizard && content.includes('[STEP_COMPLETE]')) {
+        dispatch(respondToStep({ targetId, stepId, status: 'done', comment }));
+    }
+
+    // Return the intelligent context so fulfilled handler can hydrate stepData directly from the single orchestrated response
+    return { targetId, stepId, stepText: step?.text || '', data };
+  }
+);
+
+export const sendStepMessage = createAsyncThunk(
+  'copilot/sendStepMessage',
+  async (
+    payload: { targetId: string; machineId: string; stepId: string; stepText: string; message: string },
+    { dispatch, getState }
+  ) => {
+    const { targetId, machineId, stepId, stepText, message } = payload;
+
+    // 1. Immediately show the user's message in chat
+    dispatch(addChatMessage({ role: 'user', content: message, targetId }));
+
+    // 2. Show a thinking indicator
+    dispatch(addChatMessage({
+      role: 'agent',
+      content: '⚙️ Processing your message...',
+      targetId,
+      type: 'step_clarification',
+      stepData: { stepId, stepText, phaseType: '', phaseTitle: '', subphaseTitle: '', stepIndex: 0, totalSteps: 0 }
+    }));
+
+    // 3. Classify intent via fast gpt-4o-mini call
+    let intent = 'FREE_CHAT';
+    try {
+      const classRes = await fetch(`${API_BASE}/api/copilot/classify-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_message: message, step_text: stepText, machine_id: machineId }),
+      });
+      const classData = await classRes.json();
+      intent = classData.intent || 'FREE_CHAT';
+    } catch {
+      intent = 'FREE_CHAT';
+    }
+
+    // 4. Route to the right action based on intent
+    // Unified Conversational Routing
+    const wizardQuery = intent === 'FREE_CHAT' 
+        ? message 
+        : `[CONVERSATIONAL_WIZARD] ${message} (Context: ${intent} for task "${stepText}")`;
+
+    const res = await fetch(`${API_BASE}/api/copilot/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        machine_id: machineId,
+        user_query: wizardQuery,
+        machine_state: intent === 'FREE_CHAT' ? 'general_inquiry' : 'procedural_support'
+      }),
+    });
+    
+    const data = await res.json();
+    const finalContent = data.graph_result.final_execution_plan;
+
+    // Auto-advance logic if AI confirms completion in wizard mode
+    if (finalContent.includes('[STEP_COMPLETE]')) {
+        dispatch(respondToStep({ targetId, stepId, status: 'done', comment: message }));
+    }
+
+    return { targetId, stepId, stepText, data, intent };
   }
 );
 
@@ -355,7 +432,7 @@ const copilotSlice = createSlice({
       // Record response in procedure state
       proc.responses[stepId] = { status: status as StepResponse['status'], comment };
 
-      // Mark relatevd messages as responded (find all matching stepId)
+      // Mark related messages as responded
       for (let i = history.length - 1; i >= 0; i--) {
         const msg = history[i];
         if ((msg.type === 'step' || msg.type === 'step_clarification' || msg.type === 'branching_advice') && msg.stepData?.stepId === stepId) {
@@ -378,20 +455,23 @@ const copilotSlice = createSlice({
       if (status === 'done') {
         proc.currentStepIndex++;
 
-        if (proc.currentStepIndex >= proc.flatSteps.length) {
-          // === ALL STEPS DONE ===
+        // Procedural Completion (Fixed procedures only)
+        if (proc.flatSteps.length > 0 && proc.currentStepIndex >= proc.flatSteps.length) {
           proc.completed = true;
           history.push({
             role: 'agent',
             content: '🎉 **All procedure steps completed!**\n\nGreat work! Click **Complete Task** above to finalize and archive this incident with your notes.',
             type: 'procedure_complete',
           });
-        } else {
+        }
+
+        // Procedural Advance (Fixed procedures only)
+        if (proc.flatSteps.length > 0 && proc.currentStepIndex < proc.flatSteps.length) {
           const nextStep = proc.flatSteps[proc.currentStepIndex];
           const prevStep = proc.flatSteps[proc.currentStepIndex - 1];
 
           // Phase transition header
-          if (nextStep.phaseId !== prevStep.phaseId) {
+          if (nextStep && prevStep && nextStep.phaseId !== prevStep.phaseId) {
             history.push({
               role: 'agent',
               content: `✅ **${prevStep.phaseTitle}** — Complete!\n\nProceeding to **${nextStep.phaseTitle}**...`,
@@ -418,7 +498,7 @@ const copilotSlice = createSlice({
         }
       }
     },
-    
+
     forceAdvanceStep(state, action: PayloadAction<{ targetId: string }>) {
       const { targetId } = action.payload;
       const proc = state.activeProcedure[targetId];
@@ -428,18 +508,20 @@ const copilotSlice = createSlice({
 
       proc.currentStepIndex++;
 
-      if (proc.currentStepIndex >= proc.flatSteps.length) {
+      if (proc.flatSteps.length > 0 && proc.currentStepIndex >= proc.flatSteps.length) {
         proc.completed = true;
         history.push({
           role: 'agent',
           content: '🎉 **All procedure steps completed!**\n\nGreat work! Click **Complete Task** above to finalize and archive this incident with your notes.',
           type: 'procedure_complete',
         });
-      } else {
+      }
+
+      if (proc.flatSteps.length > 0 && proc.currentStepIndex < proc.flatSteps.length) {
         const nextStep = proc.flatSteps[proc.currentStepIndex];
         const prevStep = proc.flatSteps[proc.currentStepIndex - 1];
 
-        if (nextStep.phaseId !== prevStep.phaseId) {
+        if (nextStep && prevStep && nextStep.phaseId !== prevStep.phaseId) {
           history.push({
             role: 'agent',
             content: `✅ **${prevStep.phaseTitle}** — Complete!\n\nProceeding to **${nextStep.phaseTitle}**...`,
@@ -523,66 +605,71 @@ const copilotSlice = createSlice({
 
       const lastIdx = history.length - 1;
       const result = action.payload.graph_result;
+      
+      // DEFENSIBLY GUARD: Prevent TypeError if result is unexpectedly nil
+      if (!result || !result.final_execution_plan) {
+          history[lastIdx] = {
+              role: 'agent',
+              content: '⚠️ The AI engine encountered an orchestration failure. Please try clarifying your request.',
+          };
+          return;
+      }
+
       const content = result.final_execution_plan;
       const procedure = parseProcedureFromContent(content);
+      
+      const finalContent = content.replace(/\[STEP_COMPLETE\]/g, '✅').replace(/\[STEP_NEED_HELP\]/g, '⚠️').replace(/\[CONVERSATIONAL_WIZARD\]/gi, '');
 
-      if (procedure) {
-        // === PROCEDURE RECEIVED: Start step-by-step flow ===
-        // Remove placeholder "Analyzing..." message
-        history.splice(lastIdx, 1);
-
-        // Flatten steps
-        const flatSteps = flattenProcedure(procedure);
-
-        // Store active procedure
-        state.activeProcedure[targetId] = {
-          flatSteps,
-          currentStepIndex: 0,
-          responses: {},
-          images: result.retrieved_images || [],
-          completed: false,
-        };
-
-        // Add phase header + first step
-        if (flatSteps.length > 0) {
-          const firstStep = flatSteps[0];
+      // Intelligent Phase Detection: [PHASE: Safety & Lockout]
+      const phaseMatch = content.match(/\[PHASE:\s*(.*?)\]/i);
+      if (phaseMatch) {
+          history[lastIdx] = {
+              role: 'agent',
+              type: 'phase_header',
+              content: `🛡️ **${phaseMatch[1]}**`
+          };
           history.push({
-            role: 'agent',
-            content: `**${firstStep.phaseTitle}**\n\nLet's begin with the safety protocols. I'll guide you through each step one by one.`,
-            type: 'phase_header',
+              role: 'agent',
+              content: finalContent.replace(/\[PHASE:.*?\]/gi, '').trim(),
+              images: result.retrieved_images || [],
+              machineId: action.meta.arg.machine_id,
+              dbId: action.payload.db_id,
+              type: 'wizard_step',
+              hasSuggestion: /\[SUGGESTION:[\s\S]*?Generate full step-by-step repair procedure[\s\S]*?\]/i.test(content),
+              stepData: {
+                  stepId: 'wizard_flow',
+                  stepText: finalContent.replace(/\[PHASE:.*?\]/gi, '').trim(),
+                  phaseType: 'diagnostic', phaseTitle: 'Guided Repair', subphaseTitle: phaseMatch[1], stepIndex: 1, totalSteps: 1
+              } as any
           });
-          history.push({
-            role: 'agent',
-            content: firstStep.text,
-            type: 'step',
-            stepData: {
-              stepId: firstStep.id,
-              phaseType: firstStep.phaseType,
-              phaseTitle: firstStep.phaseTitle,
-              subphaseTitle: firstStep.subphaseTitle,
-              stepIndex: 0,
-              totalSteps: flatSteps.length,
-              critical: firstStep.critical,
-            },
-            images: result.retrieved_images,
-          });
-        }
-      } else {
-        // === SUMMARY/TEXT MODE (no procedure) ===
-        // Clean content: strip tags for display
-        const cleanContent = content
-          .replace(/\[SUGGESTION:.*?\]/gi, '')
-          .trim();
+          return;
+      }
 
-        const hasSuggestion = content.includes('[SUGGESTION:');
+      history[lastIdx] = {
+        role: 'agent',
+        content: finalContent.trim(),
+        images: result.retrieved_images || [],
+        machineId: action.meta.arg.machine_id,
+        dbId: action.payload.db_id,
+        hasSuggestion: /\[SUGGESTION:[\s\S]*?Generate full step-by-step repair procedure[\s\S]*?\]/i.test(content),
+        // Identify as a wizard step to enable action buttons
+        type: (content.includes('[CONVERSATIONAL_WIZARD]') || action.meta.arg.query.includes('[CONVERSATIONAL_WIZARD]')) ? 'wizard_step' : 'text',
+        stepData: {
+            stepId: 'wizard_flow',
+            stepText: finalContent.trim(),
+            phaseType: 'diagnostic', phaseTitle: 'Guided Repair', subphaseTitle: 'AI Navigator', stepIndex: 1, totalSteps: 1
+        } as any
+      };
 
-        history[lastIdx] = {
-          role: 'agent',
-          content: hasSuggestion ? cleanContent + '\n\n[SUGGESTION: Generate full step-by-step repair procedure]' : cleanContent,
-          images: result.retrieved_images,
-          machineId: action.meta.arg.machine_id,
-          dbId: action.payload.db_id,
-        };
+      // If we've started a wizard session, initialize the step context
+      if (content.includes('[CONVERSATIONAL_WIZARD]') || action.meta.arg.query.includes('[CONVERSATIONAL_WIZARD]')) {
+          state.activeProcedure[targetId] = {
+              flatSteps: [],
+              currentStepIndex: 0,
+              responses: {},
+              images: result.retrieved_images || [],
+              completed: false,
+          };
       }
     });
 
@@ -597,38 +684,139 @@ const copilotSlice = createSlice({
 
      // Adaptive Guidance Handlers
      builder.addCase(clarifyStep.fulfilled, (state, action) => {
-        const { targetId, data } = action.payload;
+        const { targetId, stepId, stepText, data } = action.payload;
         const history = state.chatHistory[targetId];
         if (!history) return;
         const lastIdx = history.length - 1;
         const content = data.graph_result.final_execution_plan;
+        const finalContent = content.replace(/\[STEP_COMPLETE\]/g, '✅').replace(/\[STEP_NEED_HELP\]/g, '⚠️').replace(/\[CONVERSATIONAL_WIZARD\]/gi, '');
         
-        history[lastIdx] = {
+        const phaseMatch = content.match(/\[PHASE:\s*(.*?)\]/i);
+        if (phaseMatch) {
+            history.push({
+                role: 'agent',
+                type: 'phase_header',
+                content: `🚀 **${phaseMatch[1]}**`
+            });
+        }
+        
+        history.push({
             role: 'agent',
-            content,
-            type: 'step_clarification',
+            content: finalContent.replace(/\[PHASE:.*?\]/gi, '').trim(),
+            type: 'wizard_step',
             images: data.graph_result.retrieved_images,
-            stepData: history[lastIdx].stepData // Preserve step context
-        };
+            stepData: {
+              stepId,
+              stepText: stepText || '',
+              phaseType: '', phaseTitle: '', subphaseTitle: 'AI Tutorial Detail', stepIndex: 0, totalSteps: 0
+            } as any
+        });
      });
 
      builder.addCase(submitAdaptiveStepResponse.fulfilled, (state, action) => {
         if (!action.payload) return;
-        const { targetId, data } = action.payload;
+        const { targetId, stepId, stepText, data } = action.payload;
+        if (!data) return;
         const history = state.chatHistory[targetId];
         if (!history) return;
         const lastIdx = history.length - 1;
         const content = data.graph_result.final_execution_plan;
+        const finalContent = content.replace(/\[STEP_COMPLETE\]/g, '✅').replace(/\[STEP_NEED_HELP\]/g, '⚠️');
+
+        // Intelligent Phase Transition
+        const phaseMatch = content.match(/\[PHASE:\s*(.*?)\]/i);
+        if (phaseMatch) {
+            history.push({
+                role: 'agent',
+                type: 'phase_header',
+                content: `🚀 **${phaseMatch[1]}**`
+            });
+            history.push({
+                role: 'agent',
+                content: finalContent.replace(/\[PHASE:.*?\]/gi, '').replace(/\[PROCEDURE_FINISH\]/g, '🏁').trim(),
+                type: 'wizard_step',
+                images: data.graph_result.retrieved_images,
+                stepData: {
+                    stepId: stepId || 'wizard_step',
+                    stepText: finalContent.replace(/\[PHASE:.*?\]/gi, '').trim(),
+                    phaseType: 'active_repair', phaseTitle: 'Guided Step', subphaseTitle: phaseMatch[1], stepIndex: 0, totalSteps: 0
+                } as any,
+            });
+            return;
+        }
+
+        history.push({
+            role: 'agent',
+            content: finalContent.replace(/\[PROCEDURE_FINISH\]/g, '🏁'),
+            type: finalContent.includes('[PROCEDURE_FINISH]') ? 'procedure_complete' : 'wizard_step',
+            images: data.graph_result.retrieved_images,
+            stepData: {
+              stepId,
+              stepText: finalContent.replace(/\[PROCEDURE_FINISH\]/g, '🏁').trim(),
+              phaseType: '', phaseTitle: '', subphaseTitle: 'Agent Guidance', stepIndex: 0, totalSteps: 0
+            } as any
+        });
+     });
+
+     // === INTELLIGENT CHAT HANDLER ===
+     builder.addCase(sendStepMessage.fulfilled, (state, action) => {
+        if (!action.payload) return;
+        const { targetId, stepId, stepText, data, intent } = action.payload;
+        if (!data) return;
+        const history = state.chatHistory[targetId];
+        if (!history) return;
+
+        // Find and replace the placeholder "Processing..." message
+        const lastIdx = history.length - 1;
+        const content = data.graph_result?.final_execution_plan;
+        if (!content) return;
+
+        // Route rendering based on classified intent
+        const typeMap: Record<string, string> = {
+          'NEED_DETAIL': 'step_clarification',
+          'NEED_HELP': 'branching_advice',
+          'CONFIRM_DONE': 'step_clarification', // Warm confirmation
+          'FREE_CHAT': 'text',
+        };
+        const msgType = typeMap[intent] || 'text';
+        const finalContent = content.replace(/\[STEP_COMPLETE\]/g, '✅').replace(/\[STEP_NEED_HELP\]/g, '⚠️');
+
+        // Intelligent Phase Transition
+        const phaseMatch = content.match(/\[PHASE:\s*(.*?)\]/i);
+        if (phaseMatch) {
+            history[lastIdx] = {
+                role: 'agent',
+                type: 'phase_header',
+                content: `🚀 **${phaseMatch[1]}**`
+            };
+            history.push({
+                role: 'agent',
+                content: finalContent.replace(/\[PHASE:.*?\]/gi, '').replace(/\[PROCEDURE_FINISH\]/g, '🏁').trim(),
+                type: 'wizard_step',
+                images: data.graph_result.retrieved_images,
+                stepData: {
+                    stepId: stepId || 'wizard_step',
+                    stepText: finalContent.replace(/\[PHASE:.*?\]/gi, '').trim(),
+                    phaseType: 'active_repair', phaseTitle: 'Guided Step', subphaseTitle: phaseMatch[1], stepIndex: 0, totalSteps: 0
+                } as any,
+            });
+            return;
+        }
 
         history[lastIdx] = {
             role: 'agent',
-            content,
-            type: 'branching_advice',
+            content: finalContent.replace(/\[PROCEDURE_FINISH\]/g, '🏁'),
+            type: finalContent.includes('[PROCEDURE_FINISH]') ? 'procedure_complete' : 'wizard_step',
             images: data.graph_result.retrieved_images,
-            stepData: history[lastIdx].stepData // Preserve step context
+            // Ensure stepData is always attached in Wizard/Clarification mode
+            stepData: {
+              stepId: stepId || 'wizard_step',
+              stepText: finalContent.replace(/\[PROCEDURE_FINISH\]/g, '🏁').trim(),
+              phaseType: 'active_repair', phaseTitle: 'Guided Step', subphaseTitle: 'Conversational Flow', stepIndex: 0, totalSteps: 0
+            } as any,
         };
      });
-   }
+  },
 });
 
 export const { 
@@ -644,3 +832,4 @@ export const {
 } = copilotSlice.actions;
 
 export default copilotSlice.reducer;
+
