@@ -39,7 +39,8 @@ import {
   Move,
   Bot,
   User,
-  History
+  History,
+  X
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
@@ -56,6 +57,9 @@ import {
   fetchChatHistory,
   resolveAnomaly,
   inquireCopilot,
+  setAssistantOpen,
+  addAssistantMessage,
+  inquireAssistant,
   respondToStep,
   clarifyStep,
   submitAdaptiveStepResponse,
@@ -100,7 +104,7 @@ export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
   
   // Redux-driven State
-  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory, activeProcedure } = useSelector((state: RootState) => state.copilot);
+  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory, activeProcedure, assistantHistory, isAssistantOpen } = useSelector((state: RootState) => state.copilot);
   const { machines, currentMachineId, machineConfigs } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
   
@@ -199,21 +203,29 @@ export default function IndustrialCopilotDashboard() {
   }, [chatHistory, isChatOpen]);
 
   const handleManualInquiry = (customQuery?: string) => {
-    let finalQuery = customQuery || query;
-    if (!finalQuery || activeAnomaly?.resolved) return;
-    
-    // Intelligent Switch: If manual repair is requested, use the Conversational Wizard mode
-    if (finalQuery.includes("Generate full step-by-step repair procedure")) {
-        finalQuery = "[CONVERSATIONAL_WIZARD] Start the guided repair procedure from the beginning.";
-    }
+    const finalQuery = customQuery || query;
+    if (!finalQuery.trim()) return;
+    if (!isAssistantOpen && activeAnomaly?.resolved) return;
 
-    dispatch(inquireCopilot({
-      machine_id: currentMachineId,
-      query: finalQuery,
-      machine_state: activeAnomaly ? activeAnomaly.type : "manual_inquiry_general",
-      context_anomaly: activeAnomaly || undefined
-    }));
     setQuery('');
+    
+    if (isAssistantOpen) {
+      dispatch(addAssistantMessage({ role: 'user', content: finalQuery }));
+      dispatch(inquireAssistant({ query: finalQuery, machineId: currentMachineId }));
+    } else {
+      let processedQuery = finalQuery;
+      // Intelligent Switch: If manual repair is requested, use the Conversational Wizard mode
+      if (processedQuery.includes("Generate full step-by-step repair procedure")) {
+          processedQuery = "[CONVERSATIONAL_WIZARD] Start the guided repair procedure from the beginning.";
+      }
+
+      dispatch(inquireCopilot({
+        machine_id: currentMachineId,
+        query: processedQuery,
+        machine_state: activeAnomaly ? activeAnomaly.type : "manual_inquiry_general",
+        context_anomaly: activeAnomaly || undefined
+      }));
+    }
   };
 
   const handleResolve = async () => {
@@ -322,13 +334,6 @@ export default function IndustrialCopilotDashboard() {
     dispatch(fetchSimulatorStatus());
   };
 
-  const diagnosticSuggestions = [
-    "Likely causes for this fault?",
-    "Technical repair checklist",
-    "Check signal-line integrity",
-    "Analyze ADC voltage drift",
-    "Inspect terminals for oxidation"
-  ];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col">
@@ -535,6 +540,7 @@ export default function IndustrialCopilotDashboard() {
                     key={item.id}
                     onClick={() => {
                         dispatch(setActiveAnomaly(item));
+                        dispatch(setAssistantOpen(false));
                         setIsChatOpen(true);
                     }}
                     className={`w-full p-4 rounded-2xl border transition-all text-left relative group ${activeAnomaly?.id === item.id ? 'bg-blue-600/10 border-blue-500' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-900'}`}
@@ -561,13 +567,16 @@ export default function IndustrialCopilotDashboard() {
         </div>
       </div>
 
-      {/* Floating Chat Trigger */}
+      {/* Floating Chat Trigger - Opens Independent Assistant */}
       <button 
-        onClick={() => setIsChatOpen(true)}
+        onClick={() => {
+            dispatch(setAssistantOpen(true));
+            setIsChatOpen(true);
+        }}
         className="fixed bottom-8 right-8 h-16 w-16 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-2xl shadow-blue-500/40 flex items-center justify-center transition-all hover:scale-110 active:scale-95 group z-40"
       >
         <MessageSquare size={24} className="group-hover:rotate-12 transition-transform" />
-        {activeAnomaly && (
+        {!isAssistantOpen && activeAnomaly && (
             <div className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full border-2 border-slate-950 flex items-center justify-center text-[10px] font-black">1</div>
         )}
       </button>
@@ -581,48 +590,36 @@ export default function IndustrialCopilotDashboard() {
              <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
                 <div>
                    <h2 className="text-2xl font-black flex items-center gap-3 text-white">
-                      <ShieldCheck className="text-blue-500" /> Diagnostic Copilot
+                      {isAssistantOpen ? <Bot className="text-emerald-500" /> : <ShieldCheck className="text-blue-500" />}
+                      {isAssistantOpen ? "System Assistant" : "Diagnostic Copilot"}
                    </h2>
-                   {activeAnomaly ? (
+                   {isAssistantOpen ? (
+                       <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mt-1">Mentor Mode • RAG + Search</p>
+                   ) : activeAnomaly ? (
                      <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mt-1">Investigating Incident #{activeAnomaly.id}</p>
                    ) : (
                      <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">General Inquiry Mode</p>
                    )}
                 </div>
-                 <div className="flex items-center gap-2">
-                    {activeAnomaly && !activeAnomaly.resolved && (
-                        <button 
-                            onClick={() => setIsResolveModalOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-500/20"
-                        >
-                            <CheckCircle size={14} /> Complete Task
-                        </button>
-                    )}
-                    <button 
-                        onClick={() => setIsChatMaximized(!isChatMaximized)}
-                        className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 hover:text-white transition-all"
-                        title={isChatMaximized ? "Minimize" : "Maximize"}
-                    >
+                 <div className="flex items-center gap-4">
+                    <button onClick={() => setIsChatMaximized(!isChatMaximized)} className="text-slate-500 hover:text-white transition-colors">
                         {isChatMaximized ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
                     </button>
-                    <button 
-                        onClick={() => setIsChatOpen(false)}
-                        className="p-3 bg-red-600/20 hover:bg-red-600 rounded-2xl text-red-400 hover:text-white transition-all"
-                    >
-                        <Square size={20} />
+                    <button onClick={() => { setIsChatOpen(false); dispatch(setAssistantOpen(false)); }} className="text-slate-500 hover:text-red-500 transition-colors">
+                        <X size={24} />
                     </button>
                 </div>
              </div>
 
              {/* Modal Chat Body */}
-             <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] scrollbar-thin scrollbar-thumb-slate-700">
-                {loadingHistory[activeAnomaly?.id.toString() || ''] && (!chatHistory[activeAnomaly?.id.toString() || ''] || chatHistory[activeAnomaly?.id.toString() || ''].length === 0) ? (
-                    <div className="h-full flex flex-col items-center justify-center opacity-50 space-y-4">
-                        <div className="h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+             <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800">
+                {loadingHistory[activeAnomaly?.id.toString() || 'general'] ? (
+                    <div className="h-full flex flex-col items-center justify-center opacity-40">
+                        <RotateCw size={48} className="animate-spin text-blue-500 mb-6" />
                         <p className="text-xs font-bold uppercase tracking-widest">Restoring Context...</p>
                     </div>
                 ) : (
-                    (chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, index) => {
+                    (isAssistantOpen ? assistantHistory : (chatHistory[activeAnomaly?.id.toString() || 'general'] || [])).map((msg, index) => {
                         const hasSuggestion = msg.role === 'agent' && msg.content.includes('[SUGGESTION:');
                         const displayContent = msg.content
                             .replace(/\[PROCEDURE_START\][\s\S]*?\[PROCEDURE_END\]/gi, '')
@@ -791,8 +788,13 @@ export default function IndustrialCopilotDashboard() {
                             }`}>
                               <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase tracking-widest font-bold">
                                 {isFinalSummary ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Bot className="w-3 h-3" />}
-                                {isFinalSummary ? 'Completion Report' : 'AI Mentor'}
+                                {isFinalSummary ? 'Completion Report' : isAssistantOpen && msg.role === 'agent' ? 'System Mentor' : 'AI Mentor'}
                               </div>
+                              {msg.context_source && (
+                                <div className="mb-2 inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 border border-slate-700/50 rounded-full text-[8px] font-black uppercase text-slate-400">
+                                   <Database size={10} /> Source: {msg.context_source}
+                                </div>
+                              )}
                               {msg.type === 'step_clarification' && (
                                 <div className="flex items-center gap-2 mb-4 text-blue-400 text-[10px] font-black uppercase tracking-widest">
                                     <ShieldCheck size={14} /> AI Tutorial Detail
@@ -903,30 +905,20 @@ export default function IndustrialCopilotDashboard() {
 
              {/* Modal Footer */}
              <div className="p-8 bg-slate-950/80 border-t border-slate-800 space-y-6">
-                {!activeAnomaly?.resolved && (
-                    <div className="flex flex-wrap gap-2">
-                        {diagnosticSuggestions.map((s, i) => (
-                            <button key={i} onClick={() => handleManualInquiry(s)} className="text-[10px] font-bold bg-slate-800 text-slate-300 px-4 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all border border-slate-700">
-                                {s}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                <div className="flex items-center gap-4">
+                 <div className="flex items-center gap-4">
                     <input 
-                        className={`flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200 ${activeAnomaly?.resolved ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        placeholder={activeAnomaly?.resolved ? "Incident resolved (Archived)" : "Type diagnostic query..."}
+                        className={`flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200 ${(!isAssistantOpen && activeAnomaly?.resolved) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        placeholder={isAssistantOpen ? "Ask the System Assistant anything..." : activeAnomaly?.resolved ? "Incident resolved (Archived)" : "Type diagnostic query..."}
                         value={query}
-                        readOnly={activeAnomaly?.resolved}
+                        readOnly={!isAssistantOpen && activeAnomaly?.resolved}
                         onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleManualInquiry()}
                     />
                     <button 
-                        onClick={() => handleManualInquiry()} 
-                        disabled={activeAnomaly?.resolved}
-                        className={`bg-blue-600 p-4 rounded-2xl hover:bg-blue-500 transition-all shadow-xl ${activeAnomaly?.resolved ? 'opacity-30 cursor-not-allowed' : ''}`}
+                       onClick={() => handleManualInquiry()}
+                       className="p-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-95"
                     >
-                        <Send size={24} />
+                       <Send size={20} />
                     </button>
                 </div>
              </div>

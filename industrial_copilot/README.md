@@ -133,8 +133,10 @@ INFLUX_BUCKET=sensor_data
 ### Start Backend
 ```bash
 cd industrial_copilot/backend
+python -m venv .venv (if not exists)
+.\.venv\Scripts\Activate.ps1      
 pip install -r requirements.txt
-python -m uvicorn api.main_api:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn api.main_api:app --reload
 ```
 
 ### Start Frontend
@@ -240,4 +242,4 @@ Final Execution Plan → persisted to DB → streamed to UI
 
 ---
 
-*Made with ❤️ for intelligent industrial operations.*
+*Made with Zynaptrix AI Research Team for intelligent industrial operations.*
