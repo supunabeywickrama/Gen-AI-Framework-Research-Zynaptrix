@@ -46,9 +46,8 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     timestamp = Column(String, nullable=False)
     images = Column(Text, nullable=True) # JSON list of URLs for agent responses
-    # Use 'message_metadata' in Python to avoid conflict with SQLAlchemy's reserved 'metadata' attribute, 
-    # but keep it mapped to the 'metadata' column in the database.
-    message_metadata = Column("metadata", Text, nullable=True) # JSON: procedure state, task completion, etc.
+    # Use 'message_metadata' in Python to avoid conflict with SQLAlchemy's reserved 'metadata' attribute
+    message_metadata = Column(Text, nullable=True) # JSON: procedure state, task completion, etc.
 
 class InteractionMemory(Base):
     """
