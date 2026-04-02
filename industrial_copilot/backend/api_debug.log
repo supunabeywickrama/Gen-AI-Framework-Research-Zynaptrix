@@ -2193,3 +2193,43 @@ SUCCESS: Agent response stored for ID 1192.
 CONTEXT: Hydrated 20 previous messages for incident 1192.
 SUCCESS: Graph execution completed.
 SUCCESS: Agent response stored for ID 1192.
+
+--- INQUIRY START: Anomaly #1190 ---
+CONTEXT: Hydrated 2 previous messages for incident 1190.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1190.
+
+--- INQUIRY START: Anomaly #1190 ---
+CONTEXT: Hydrated 4 previous messages for incident 1190.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1190.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 34 previous messages for incident 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 36 previous messages for incident 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1019 ---
+CONTEXT: Hydrated 0 previous messages for incident 1019.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1019.
+
+--- INQUIRY START: Anomaly #1019 ---
+CONTEXT: Hydrated 2 previous messages for incident 1019.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1019.
+
+--- INQUIRY START: Anomaly #1019 ---
+CONTEXT: Hydrated 4 previous messages for incident 1019.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1019.
+
+--- INQUIRY START: Anomaly #1019 ---
+CONTEXT: Hydrated 6 previous messages for incident 1019.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1019.

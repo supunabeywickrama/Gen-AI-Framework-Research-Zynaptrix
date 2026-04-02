@@ -179,7 +179,7 @@ export const fetchChatHistory = createAsyncThunk(
 export const resolveAnomaly = createAsyncThunk(
   'copilot/resolve',
   async (payload: { anomalyId: number; operator_fix: string }) => {
-    const response = await fetch(`${API_BASE}/api/copilot/chat/${payload.anomalyId}/resolve`, {
+    const response = await fetch(`${API_BASE}/api/chat-history/${payload.anomalyId}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ operator_fix: payload.operator_fix }),

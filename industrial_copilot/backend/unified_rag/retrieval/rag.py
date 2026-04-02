@@ -76,6 +76,7 @@ class RAGGenerator:
                     manual_id, 
                     query, 
                     text_context, 
+                    history_context,
                     image_references,
                     chat_history,
                     manual_missing
@@ -193,7 +194,7 @@ class RAGGenerator:
             f"MANUAL SOURCE OF TRUTH:\n{text_context}"
         )
 
-    def _build_conversational_wizard_prompt(self, manual_id: str, user_query: str, text_context: str, image_references: list, history: str, missing_manual: bool = False) -> str:
+    def _build_conversational_wizard_prompt(self, manual_id: str, user_query: str, text_context: str, history_context: str, image_references: list, history: str, missing_manual: bool = False) -> str:
         """
         MODE 5: Conversational Wizard Prompt.
         """
@@ -208,11 +209,13 @@ class RAGGenerator:
             "CURRENT CONTEXT:\n"
             f"1. CHAT HISTORY:\n{history}\n"
             f"2. OPERATOR INPUT: '{user_query}'\n"
-            f"3. MANUAL SOURCE OF TRUTH:\n{text_context}\n\n"
+            f"3. MANUAL SOURCE OF TRUTH:\n{text_context}\n"
+            f"4. PAST INTERACTIONS / HISTORICAL KNOWLEDGE:\n{history_context}\n\n"
             "YOUR MISSION CRITICAL TASK:\n"
             "1. READ HISTORY: Determine if we are in Safety (start here!) or Repair phase.\n"
             "2. ADAPT: If they completed a step, provide the EXACT next step from the manual. Do not ask them what to do.\n"
-            "3. RESPONSE STYLE: 2-3 detailed, warm sentences. Be clear and supportive.\n\n"
+            "3. FIELD WISDOM: If 'PAST INTERACTIONS' shows a successful previous fix for a similar issue on this machine, MENTION IT. If the operator notes from history contradict the manual (e.g. 'the manual says 50Nm but 55Nm worked better'), prioritize the verified operator fix.\n"
+            "4. RESPONSE STYLE: 2-3 detailed, warm sentences. Be clear and supportive.\n\n"
             "OUTPUT FORMAT: Start with '[PHASE: <Name>]'.\n\n"
             "SAFETY MANDATE:\n"
             "- IF CHAT HISTORY IS EMPTY: You MUST exclusively provide Safety and Preparation steps (PPE, LOTO, etc.) as the very first instruction. DO NOT skip to the actual repair task.\n"
