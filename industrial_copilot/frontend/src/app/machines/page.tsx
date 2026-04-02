@@ -9,12 +9,20 @@ export default function MachineRegistryPage() {
   const dispatch = useDispatch<AppDispatch>();
   const { machines, loading, error } = useSelector((state: RootState) => state.machines);
   
+  interface SensorInput {
+    id: string; // Internal random id for list key
+    sensor_id: string;
+    sensor_name: string;
+    file: File | null;
+  }
+
   const [formData, setFormData] = useState<Machine>({
     machine_id: '',
     name: '',
     location: '',
     manual_id: ''
   });
+  const [sensors, setSensors] = useState<SensorInput[]>([]);
 
   const [registerStatus, setRegisterStatus] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -28,9 +36,29 @@ export default function MachineRegistryPage() {
     e.preventDefault();
     setRegisterStatus(isEditing ? 'Updating...' : 'Registering...');
     try {
-      await dispatch(registerMachine(formData)).unwrap();
-      setRegisterStatus(isEditing ? 'Success! Machine updated.' : 'Success! Machine registered.');
+      const data = new FormData();
+      data.append('machine_id', formData.machine_id);
+      data.append('name', formData.name);
+      data.append('location', formData.location);
+      data.append('manual_id', formData.manual_id);
+      
+      const sensorConfigs = sensors.map(s => ({
+        sensor_id: s.sensor_id,
+        sensor_name: s.sensor_name
+      }));
+      data.append('sensors', JSON.stringify(sensorConfigs));
+      
+      sensors.forEach(s => {
+        if (s.file) {
+          data.append(`datasheet_${s.sensor_id}`, s.file);
+        }
+      });
+
+      // @ts-ignore
+      await dispatch(registerMachine(data)).unwrap();
+      setRegisterStatus(isEditing ? 'Success! Machine updated.' : 'Success! System is securely generating datasets & training the AI model.');
       setFormData({ machine_id: '', name: '', location: '', manual_id: '' });
+      setSensors([]);
       setIsEditing(false);
       setTimeout(() => setRegisterStatus(null), 3000);
     } catch (err) {
@@ -48,7 +76,20 @@ export default function MachineRegistryPage() {
 
   const cancelEdit = () => {
     setFormData({ machine_id: '', name: '', location: '', manual_id: '' });
+    setSensors([]);
     setIsEditing(false);
+  };
+
+  const addSensor = () => {
+    setSensors([...sensors, { id: Math.random().toString(), sensor_id: '', sensor_name: '', file: null }]);
+  };
+
+  const updateSensor = (id: string, field: keyof SensorInput, value: any) => {
+    setSensors(sensors.map(s => s.id === id ? { ...s, [field]: value } : s));
+  };
+
+  const removeSensor = (id: string) => {
+    setSensors(sensors.filter(s => s.id !== id));
   };
 
   const handleDelete = async (id: string) => {
@@ -147,6 +188,58 @@ export default function MachineRegistryPage() {
                   placeholder="e.g. Lathe_Manual_V1" 
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition-all text-white"
                 />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-800">
+              <div className="flex justify-between items-center mb-4">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">Sensors & Parameters</label>
+                <button type="button" onClick={addSensor} className="text-[10px] uppercase font-bold tracking-wider text-blue-400 hover:text-blue-300 transition-colors bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                  <Plus size={12} /> Add Sensor
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {sensors.map((sensor, idx) => (
+                  <div key={sensor.id} className="bg-slate-950/50 border border-slate-800 rounded-xl p-4 flex flex-col gap-3 relative group">
+                    <button type="button" onClick={() => removeSensor(sensor.id)} className="absolute top-2 right-2 p-1 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                      <X size={14} />
+                    </button>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <input 
+                          type="text" 
+                          required
+                          value={sensor.sensor_name}
+                          onChange={(e) => updateSensor(sensor.id, 'sensor_name', e.target.value)}
+                          placeholder="Sensor Name (e.g. Spindle Temp)" 
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:border-blue-500 transition-all text-white"
+                        />
+                      </div>
+                      <div>
+                         <input 
+                          type="text" 
+                          required
+                          value={sensor.sensor_id}
+                          onChange={(e) => updateSensor(sensor.id, 'sensor_id', e.target.value.toLowerCase().replace(/\s/g, '_'))}
+                          placeholder="Sensor ID (e.g. comp_temp)" 
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-xs focus:outline-none focus:border-blue-500 transition-all text-white font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <input 
+                        type="file" 
+                        accept="application/pdf"
+                        onChange={(e) => updateSensor(sensor.id, 'file', e.target.files?.[0] || null)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20"
+                      />
+                      <p className="mt-1.5 text-[9px] text-slate-500 tracking-wider uppercase">Upload PDF format datasheet for AI bounds parsing</p>
+                    </div>
+                  </div>
+                ))}
+                {sensors.length === 0 && <p className="text-xs text-slate-600 italic">No custom sensors defined. Default machine parameters will be used.</p>}
               </div>
             </div>
 

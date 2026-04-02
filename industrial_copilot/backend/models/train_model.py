@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config.settings import PROCESSED_DATA_PATH, SENSOR_COLUMNS
+from config.settings import PROCESSED_DATA_PATH
 from models.autoencoder_model import (
     build_autoencoder,
     get_callbacks as dense_callbacks,
@@ -61,8 +61,8 @@ def get_model_paths(machine_id: str = "PUMP-001"):
         "data":  PROCESSED_DATA_PATH.replace(".csv", f"_{machine_id}.csv")
     }
 
-def load_normal_data(machine_id: str = "PUMP-001") -> np.ndarray:
-    """Load normalized dataset and return only normal-state rows."""
+def load_normal_data(machine_id: str = "PUMP-001") -> tuple[np.ndarray, int]:
+    """Load normalized dataset and return only normal-state rows, plus feature count."""
     paths = get_model_paths(machine_id)
     if not os.path.exists(paths["data"]):
         log.warning(f"No processed data for {machine_id}, falling back to default.")
@@ -70,9 +70,10 @@ def load_normal_data(machine_id: str = "PUMP-001") -> np.ndarray:
     else:
         df = pd.read_csv(paths["data"])
         
-    normal_df = df[df["state"] == "normal"][SENSOR_COLUMNS]
-    log.info(f"[{machine_id}] Normal rows for training: {len(normal_df):,}")
-    return normal_df.values.astype(np.float32)
+    sensor_cols = [c for c in df.columns if c not in ["timestamp", "machine_id", "state"]]
+    normal_df = df[df["state"] == "normal"][sensor_cols]
+    log.info(f"[{machine_id}] Normal rows for training: {len(normal_df):,} with {len(sensor_cols)} sensors")
+    return normal_df.values.astype(np.float32), len(sensor_cols)
 
 
 def compute_threshold(errors: np.ndarray, n_sigma: float = 2.0) -> float:
@@ -134,12 +135,12 @@ def train_dense(machine_id: str = "PUMP-001"):
     log.info(f"Training Dense Autoencoder for {machine_id}")
     log.info("═" * 50)
 
-    X = load_normal_data(machine_id)
+    X, n_features = load_normal_data(machine_id)
     split = int(len(X) * 0.85)
     X_train, X_val = X[:split], X[split:]
     log.info(f"Train: {len(X_train):,}   Val: {len(X_val):,}")
 
-    model = build_autoencoder(n_features=len(SENSOR_COLUMNS))
+    model = build_autoencoder(n_features=n_features)
     model.summary()
 
     history = model.fit(
@@ -178,14 +179,14 @@ def train_lstm(machine_id: str = "PUMP-001"):
     log.info(f"Training LSTM Autoencoder for {machine_id}")
     log.info("═" * 50)
 
-    X = load_normal_data(machine_id)
+    X, n_features = load_normal_data(machine_id)
     X_seq = create_sequences(X, timesteps=TIMESTEPS)
     log.info(f"Sequences shape: {X_seq.shape}")
 
     split = int(len(X_seq) * 0.85)
     X_train, X_val = X_seq[:split], X_seq[split:]
 
-    model = build_lstm_autoencoder(timesteps=TIMESTEPS, n_features=len(SENSOR_COLUMNS))
+    model = build_lstm_autoencoder(timesteps=TIMESTEPS, n_features=n_features)
     model.summary()
 
     history = model.fit(
