@@ -272,7 +272,7 @@ export const submitAdaptiveStepResponse = createAsyncThunk(
   async (payload: { targetId: string; machineId: string; stepId: string; status: string; comment?: string; stepText?: string }, { dispatch, getState }) => {
     const { targetId, machineId, stepId, status, comment, stepText } = payload;
     
-    const isWizard = stepId === 'wizard_flow' || stepId === 'wizard_step';
+    const isWizard = stepId.startsWith('wizard_');
 
     // CASE A: Done with NO comment -> FAST TRACK (Only for fixed procedures)
     if (!isWizard && status === 'done' && (!comment || !comment.trim())) {
@@ -555,7 +555,6 @@ const copilotSlice = createSlice({
       state.anomalyHistory = action.payload;
     });
     
-    // Chat Persistence Loading
     builder.addCase(fetchChatHistory.pending, (state, action) => {
         state.loadingHistory[action.meta.arg.toString()] = true;
     });
@@ -565,15 +564,72 @@ const copilotSlice = createSlice({
             // Empty — the auto-diagnosis useEffect in page.tsx will populate
             state.chatHistory[anomalyId.toString()] = [];
         } else {
-            // Hydrate messages from DB (text messages only for persistence)
-            state.chatHistory[anomalyId.toString()] = messages.map((m: any) => {
-                return {
+            // Hydrate messages from DB
+            const hydrated = [];
+            for (const m of messages) {
+                const contentText = m.content || '';
+                
+                let msgObj: any = {
                     role: m.role,
-                    content: m.content,
+                    content: contentText,
                     images: m.images || [],
-                    dbId: m.db_id
+                    dbId: m.db_id,
+                    metadata: m.metadata
                 };
-            });
+
+                // Re-hydrate Wizard/Action statuses if it's an agent message containing markers
+                if (m.role === 'agent') {
+                    const phaseMatch = contentText.match(/\[PHASE:\s*(.*?)\]/i);
+                    const isWizard = contentText.includes('[CONVERSATIONAL_WIZARD]');
+                    
+                    if (phaseMatch || isWizard) {
+                        // Ensure activeProcedure exists for this anomaly to allow button handlers to work
+                        if (!state.activeProcedure[anomalyId.toString()]) {
+                            state.activeProcedure[anomalyId.toString()] = {
+                                flatSteps: [], currentStepIndex: 0, responses: {}, images: [], completed: false
+                            };
+                        }
+                        
+                        const finalContent = contentText.replace(/\[STEP_COMPLETE\]/g, '✅').replace(/\[STEP_NEED_HELP\]/g, '⚠️').replace(/\[CONVERSATIONAL_WIZARD\]/gi, '');
+                        
+                        if (phaseMatch) {
+                            hydrated.push({
+                                role: 'agent',
+                                type: 'phase_header',
+                                content: `🛡️ **${phaseMatch[1]}**`
+                            });
+                            msgObj.content = finalContent.replace(/\[PHASE:.*?\]/gi, '').trim();
+                            msgObj.type = 'wizard_step';
+                            msgObj.stepData = {
+                                stepId: 'wizard_flow_' + m.db_id,
+                                stepText: msgObj.content,
+                                phaseType: 'diagnostic', phaseTitle: 'Guided Repair', subphaseTitle: phaseMatch[1], stepIndex: 1, totalSteps: 1
+                            };
+                        } else {
+                            msgObj.content = finalContent.trim();
+                            msgObj.type = 'wizard_step';
+                            msgObj.stepData = {
+                                stepId: 'wizard_flow_' + m.db_id,
+                                stepText: msgObj.content,
+                                phaseType: 'diagnostic', phaseTitle: 'Guided Repair', subphaseTitle: 'AI Navigator', stepIndex: 1, totalSteps: 1
+                            };
+                        }
+                    }
+                } else if (m.role === 'user' && m.metadata && m.metadata.action === 'step_response') {
+                    // This was a button response, map it to stepResponse mapping natively through the frontend states
+                    // (To avoid double printing, we just keep the user message as normal, 
+                    // but we look at previous agent messages and mark them as responded)
+                    for (let i = hydrated.length - 1; i >= 0; i--) {
+                        if (hydrated[i].role === 'agent' && hydrated[i].type === 'wizard_step' && !hydrated[i].stepResponse) {
+                            hydrated[i].stepResponse = { status: m.metadata.status, comment: m.metadata.comment };
+                            break;
+                        }
+                    }
+                }
+                
+                hydrated.push(msgObj);
+            }
+            state.chatHistory[anomalyId.toString()] = hydrated;
         }
         state.loadingHistory[anomalyId.toString()] = false;
     });
@@ -761,7 +817,27 @@ const copilotSlice = createSlice({
         });
      });
 
-     // === INTELLIGENT CHAT HANDLER ===
+      // === INTELLIGENT CHAT HANDLER ===
+      builder.addCase(sendStepMessage.pending, (state, action) => {
+          const { targetId, message } = action.meta.arg;
+          const history = state.chatHistory[targetId];
+          if (!history) return;
+
+          // Immediately hide buttons on the previous step card
+          for (let i = history.length - 1; i >= 0; i--) {
+              const msg = history[i];
+              if (msg.role === 'agent' && (msg.type === 'wizard_step' || msg.type === 'step')) {
+                  // Determine status from the message content
+                  let status: any = 'done';
+                  if (message.toLowerCase().includes("stuck") || message.toLowerCase().includes("alternative")) {
+                      status = 'cant_do';
+                  }
+                  msg.stepResponse = { status, comment: message };
+                  break;
+              }
+          }
+      });
+
      builder.addCase(sendStepMessage.fulfilled, (state, action) => {
         if (!action.payload) return;
         const { targetId, stepId, stepText, data, intent } = action.payload;

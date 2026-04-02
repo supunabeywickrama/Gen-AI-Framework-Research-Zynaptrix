@@ -97,7 +97,30 @@ def invoke_copilot(event: AnomalyEvent):
     with open("api_debug.log", "a") as f:
         f.write(f"\n--- INQUIRY START: Anomaly #{event.anomaly_id} ---\n")
         
-        # 📝 PHASE 1: Persistent User Message (Isolated Session)
+        # 🧠 PHASE 2: Context Hydration (Fetch PREVIOUS history before adding CURRENT message)
+        chat_context = ""
+        try:
+            db_history = SessionLocal()
+            try:
+                # Calculate anomaly lookup ID
+                look_id = int(event.anomaly_id) if event.anomaly_id else None
+                
+                past_messages = db_history.query(ChatMessage).filter(
+                    ChatMessage.anomaly_id == look_id
+                ).order_by(ChatMessage.id).all()
+                
+                for m in past_messages:
+                    chat_context += f"{m.role.upper()}: {m.content}\n"
+                
+                f.write(f"CONTEXT: Hydrated {len(past_messages)} previous messages for incident {look_id}.\n")
+            except Exception as e:
+                f.write(f"HISTORY_WARNING: DB offline, providing zero-shot context only: {e}\n")
+            finally:
+                db_history.close()
+        except:
+            pass
+
+        # 📝 PHASE 3: Persistent User Message (Store CURRENT after history fetch)
         actual_id = None
         try:
             db_user = SessionLocal()
@@ -109,41 +132,30 @@ def invoke_copilot(event: AnomalyEvent):
                     actual_id = anomaly_record.id
                 
                 if event.user_query:
+                    # Save user message with optional action metadata if it was a button click
+                    metadata = None
+                    if "[CONVERSATIONAL_WIZARD]" in event.user_query:
+                        # Extract intent if it was passed in parentheses (Context: ...)
+                        intent_match = event.user_query.split("(Context: ")
+                        if len(intent_match) > 1:
+                            intent_label = intent_match[1].replace(")", "")
+                            metadata = {"action": "step_response", "status": "done" if "CONFIRM_DONE" in intent_label else "cant_do"}
+                    
                     msg = ChatMessage(
                         anomaly_id=actual_id,
                         role='user',
                         content=event.user_query,
-                        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        message_metadata=json.dumps(metadata) if metadata else None
                     )
                     db_user.add(msg)
                     db_user.commit()
             except Exception as e:
-                f.write(f"DB_WARNING[USER_PHASE]: Connection failed, proceeding anonymously: {e}\n")
+                f.write(f"DB_WARNING[USER_PHASE]: Connection failed: {e}\n")
             finally:
                 db_user.close()
         except Exception as e:
             f.write(f"DB_CRITICAL[INIT]: SessionLocal failed: {e}\n")
-
-        # 🧠 PHASE 2: Context Hydration
-        # Fetch the active chat history to provide 'Conversational Awareness' to the Graph
-        chat_context = ""
-        try:
-            db_history = SessionLocal()
-            try:
-                past_messages = db_history.query(ChatMessage).filter(
-                    ChatMessage.anomaly_id == actual_id
-                ).order_by(ChatMessage.id).all()
-                
-                for m in past_messages:
-                    chat_context += f"{m.role.upper()}: {m.content}\n"
-                
-                f.write(f"CONTEXT: Hydrated {len(past_messages)} historical messages for {actual_id}.\n")
-            except Exception as e:
-                f.write(f"HISTORY_WARNING: DB offline, providing zero-shot context only: {e}\n")
-            finally:
-                db_history.close()
-        except:
-            pass
 
         initial_state = {
             "event_id": f"EVT-{actual_id}" if actual_id else "EVT-LIVE-QUERY",

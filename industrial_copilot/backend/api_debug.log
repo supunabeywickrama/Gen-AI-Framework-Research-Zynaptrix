@@ -1926,3 +1926,58 @@ SUCCESS: Agent response stored for ID 1022.
 CONTEXT: Hydrated 15 historical messages for 1022.
 SUCCESS: Graph execution completed.
 SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 17 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 19 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1021 ---
+CONTEXT: Hydrated 1 historical messages for 1021.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1021.
+
+--- INQUIRY START: Anomaly #1021 ---
+CONTEXT: Hydrated 3 historical messages for 1021.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1021.
+
+--- INQUIRY START: Anomaly #1021 ---
+CONTEXT: Hydrated 5 historical messages for 1021.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1021.
+
+--- INQUIRY START: Anomaly #1021 ---
+CONTEXT: Hydrated 7 historical messages for 1021.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1021.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 21 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 23 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 25 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 27 historical messages for 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.
+
+--- INQUIRY START: Anomaly #1022 ---
+CONTEXT: Hydrated 28 previous messages for incident 1022.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1022.

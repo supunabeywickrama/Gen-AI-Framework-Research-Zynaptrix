@@ -183,7 +183,7 @@ export default function IndustrialCopilotDashboard() {
     const comment = stepComments[stepId];
     const targetId = activeAnomaly.id.toString();
 
-    const isWizard = stepId === 'wizard_flow' || stepId === 'wizard_step';
+    const isWizard = stepId.startsWith('wizard_');
 
     if (isWizard) {
       let predefinedMessage = comment?.trim() || "";
@@ -233,7 +233,7 @@ export default function IndustrialCopilotDashboard() {
 
   const handleClarifyStep = (stepId: string, stepText: string) => {
     if (!activeAnomaly) return;
-    const isWizard = stepId === 'wizard_flow' || stepId === 'wizard_step';
+    const isWizard = stepId.startsWith('wizard_');
     
     if (isWizard) {
       dispatch(sendStepMessage({
