@@ -41,7 +41,7 @@ import {
   inquireCopilot,
   respondToStep
 } from '../store/slices/copilotSlice';
-import { fetchMachines, setCurrentMachineId } from '../store/slices/machineSlice';
+import { fetchMachines, setCurrentMachineId, fetchMachineConfig } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
 
 export default function IndustrialCopilotDashboard() {
@@ -49,7 +49,7 @@ export default function IndustrialCopilotDashboard() {
   
   // Redux-driven State
   const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory, activeProcedure } = useSelector((state: RootState) => state.copilot);
-  const { machines, currentMachineId } = useSelector((state: RootState) => state.machines);
+  const { machines, currentMachineId, machineConfigs } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
   
   // Local transient UI states
@@ -63,7 +63,7 @@ export default function IndustrialCopilotDashboard() {
 
   // Filter telemetry points for the current machine
   const filteredTelemetry = telemetry.filter(t => t.machineId === currentMachineId);
-  const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || { temperature: 0, current: 0, vibration: 0 };
+  const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || {};
   
   const isSimulating = activeSimulators.includes(currentMachineId);
   const [isMounted, setIsMounted] = useState(false);
@@ -77,6 +77,7 @@ export default function IndustrialCopilotDashboard() {
   useEffect(() => {
     if (currentMachineId) {
       dispatch(fetchAnomalyHistory(currentMachineId));
+      dispatch(fetchMachineConfig(currentMachineId));
     }
   }, [currentMachineId, dispatch]);
 
@@ -113,11 +114,9 @@ export default function IndustrialCopilotDashboard() {
           if (parsed.type === "telemetry") {
             const data = parsed.data;
             dispatch(addTelemetry({
+              ...data,
               machineId: data.machine_id || 'PUMP-001',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              temperature: data.temperature,
-              current: data.motor_current,
-              vibration: data.vibration
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             }));
           } else if (parsed.type === "anomaly_alert") {
             const result = parsed.data;
@@ -252,19 +251,34 @@ export default function IndustrialCopilotDashboard() {
         <div className="xl:col-span-2 flex flex-col gap-6 overflow-hidden">
           
           <div className="grid grid-cols-3 gap-4">
-             {[
-               { label: 'Temperature', val: latestReading.temperature.toFixed(1), unit: '°C', color: 'blue', icon: Thermometer },
-               { label: 'Motor Load', val: latestReading.current.toFixed(2), unit: 'A', color: 'emerald', icon: Gauge },
-               { label: 'Vibration', val: latestReading.vibration.toFixed(2), unit: 'mm/s', color: 'amber', icon: VibrateIcon },
-             ].map((kpi, i) => (
-               <div key={i} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group">
-                  <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${kpi.color}-500`}>
-                     <kpi.icon size={60} />
-                  </div>
-                  <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{kpi.label}</h3>
-                  <p className="text-3xl font-black text-white">{kpi.val} <span className="text-sm text-slate-600 font-light">{kpi.unit}</span></p>
-               </div>
-             ))}
+             {(() => {
+                const config = machineConfigs[currentMachineId];
+                const sensorKeys = Object.keys(latestReading).filter(k => !['machineId', 'time', 'machine_id', 'state'].includes(k));
+                
+                // Use keys from latest telemetry, or if empty, use keys from machine config, or fallback to defaults
+                let displaySensors = sensorKeys.length > 0 ? sensorKeys : ['temperature', 'current', 'vibration'];
+                // machineConfigs stores a string[] of sensor IDs
+                if (sensorKeys.length === 0 && config && Array.isArray(config)) {
+                   displaySensors = config;
+                }
+
+                const colors = ['blue', 'emerald', 'amber', 'purple', 'rose', 'cyan'];
+                const icons = [Thermometer, Gauge, VibrateIcon, Activity, Database, Server];
+                return displaySensors.map((key, i) => {
+                  const val = latestReading[key] !== undefined ? Number(latestReading[key]).toFixed(2) : '0.00';
+                  const color = colors[i % colors.length];
+                  const Icon = icons[i % icons.length];
+                  return (
+                   <div key={key} className={`bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group`}>
+                      <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${color}-500`}>
+                         <Icon size={60} />
+                      </div>
+                      <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{key.replace(/_/g, ' ')}</h3>
+                      <p className="text-3xl font-black text-white">{val} <span className="text-sm text-slate-600 font-light">units</span></p>
+                   </div>
+                  );
+                });
+             })()}
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex-1 flex flex-col">
@@ -273,9 +287,17 @@ export default function IndustrialCopilotDashboard() {
                  <Activity className="text-blue-500" /> Real-Time Sensor Stream
                </h2>
                <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500">
-                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-blue-500 rounded"></div> Temp</span>
-                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-emerald-500 rounded"></div> Load</span>
-                  <span className="flex items-center gap-2"><div className="h-1.5 w-4 bg-amber-500 rounded"></div> Vibr</span>
+                  {(() => {
+                    const sensorKeys = Object.keys(latestReading).filter(k => !['machineId', 'time', 'machine_id', 'state'].includes(k));
+                    const displaySensors = sensorKeys.length > 0 ? sensorKeys : ['temperature', 'current', 'vibration'];
+                    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500'];
+                    return displaySensors.map((key, i) => (
+                      <span key={key} className="flex items-center gap-2">
+                        <div className={`h-1.5 w-4 ${colors[i % colors.length]} rounded`}></div>
+                        {key.substring(0, 4).toUpperCase()}
+                      </span>
+                    ));
+                  })()}
                </div>
             </div>
             <div className="flex-1 w-full min-h-[300px]">
@@ -288,9 +310,18 @@ export default function IndustrialCopilotDashboard() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
                     />
-                    <Line type="monotone" dataKey="temperature" stroke="#3b82f6" strokeWidth={3} dot={false} animationDuration={300} />
-                    <Line type="monotone" dataKey="current" stroke="#10b981" strokeWidth={3} dot={false} animationDuration={300} />
-                    <Line type="monotone" dataKey="vibration" stroke="#f59e0b" strokeWidth={3} dot={false} animationDuration={300} />
+                    {(() => {
+                       const config = machineConfigs[currentMachineId];
+                       const sensorKeys = Object.keys(latestReading).filter(k => !['machineId', 'time', 'machine_id', 'state'].includes(k));
+                       let displaySensors = sensorKeys.length > 0 ? sensorKeys : ['temperature', 'current', 'vibration'];
+                       if (sensorKeys.length === 0 && config && Array.isArray(config)) {
+                          displaySensors = config;
+                       }
+                       const colors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#06b6d4'];
+                       return displaySensors.map((key, i) => (
+                         <Line key={key} type="monotone" dataKey={key} stroke={colors[i % colors.length]} strokeWidth={3} dot={false} animationDuration={300} />
+                       ));
+                    })()}
                   </LineChart>
                 </ResponsiveContainer>
               )}

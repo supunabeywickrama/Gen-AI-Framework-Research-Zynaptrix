@@ -1,23 +1,26 @@
 import logging
-from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
+import subprocess
+import sys
 import asyncio
 import json
 import os
 from datetime import datetime
+from typing import Dict, Any, List, Optional
+
+from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 # Load environment variables early
 load_dotenv()
 
 from agents.copilot_graph import build_copilot_graph
 from unified_rag.api.endpoints import router as rag_router
-from unified_rag.db.models import Machine, AnomalyRecord
+from unified_rag.db.models import Machine, AnomalyRecord, ChatMessage, InteractionMemory
 from unified_rag.db.database import engine, Base, SessionLocal
-from sqlalchemy import text
 from services.anomaly_service import AnomalyService
 
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +48,6 @@ logging.info(f"✅ Static assets mounted from: {DATA_DIR}")
 app.include_router(rag_router, tags=["Knowledge Base"])
 
 # Ensure Next.js Frontend can securely communicate with Backend
-import os
 frontend_url = os.getenv("FRONTEND_URL", "http://127.0.0.1:3000")
 
 app.add_middleware(
@@ -58,6 +60,7 @@ app.add_middleware(
 
 # Initialize the Multi-Agent Flow
 copilot_workflow = build_copilot_graph()
+
 
 class TelemetryClientManager:
     def __init__(self):
@@ -78,25 +81,26 @@ class TelemetryClientManager:
             except:
                 pass
 
+
 telemetry_manager = TelemetryClientManager()
 
-from unified_rag.db.models import Machine, AnomalyRecord, ChatMessage, InteractionMemory
 
 class AnomalyEvent(BaseModel):
     machine_id: str = "PUMP-001"
     machine_state: str = "manual_inquiry"
-    anomaly_id: Optional[int] = None # Linked incident ID
+    anomaly_id: Optional[int] = None
     anomaly_score: Optional[float] = 0.0
     user_query: Optional[str] = None
     suspect_sensor: Optional[str] = "Unknown"
     recent_readings: Optional[Dict[str, Any]] = None
+
 
 @app.post("/api/copilot/invoke")
 def invoke_copilot(event: AnomalyEvent):
     """Synchronous entry point to avoid blocking event loop during heavy RAG."""
     with open("api_debug.log", "a") as f:
         f.write(f"\n--- INQUIRY START: Anomaly #{event.anomaly_id} ---\n")
-        
+
         initial_state = {
             "event_id": f"EVT-{event.anomaly_id}" if event.anomaly_id else "EVT-LIVE-QUERY",
             "machine_id": event.machine_id,
@@ -106,8 +110,8 @@ def invoke_copilot(event: AnomalyEvent):
             "suspect_sensor": event.suspect_sensor,
             "recent_readings": event.recent_readings or {},
         }
-    
-        # 📝 PHASE 1: Persistent User Message (Isolated Session)
+
+        # Phase 1: Persist user message
         actual_id = None
         db_user = SessionLocal()
         try:
@@ -138,7 +142,7 @@ def invoke_copilot(event: AnomalyEvent):
         finally:
             db_user.close()
 
-        # 🧠 PHASE 2: Agent Orchestration
+        # Phase 2: Agent Orchestration
         try:
             result = copilot_workflow.invoke(initial_state)
             f.write("SUCCESS: Graph execution completed.\n")
@@ -146,7 +150,7 @@ def invoke_copilot(event: AnomalyEvent):
             f.write(f"GRAPH_ERROR: {e}\n")
             return {"status": "error", "message": f"Orchestration failure: {str(e)}"}
 
-        # 🛡️ PHASE 3: Persistent Agent Response
+        # Phase 3: Persist agent response
         final_answer = result.get("final_execution_plan", "")
         if final_answer:
             db_agent = SessionLocal()
@@ -165,11 +169,9 @@ def invoke_copilot(event: AnomalyEvent):
                 f.write(f"DB_ERROR[AGENT_PHASE]: {e}\n")
             finally:
                 db_agent.close()
-                
+
         return {"status": "success", "graph_result": result, "stored_id": actual_id}
 
-from api.machine_api import router as machine_registry_router
-app.include_router(machine_registry_router)
 
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket):
@@ -180,33 +182,31 @@ async def websocket_telemetry(websocket: WebSocket):
     except WebSocketDisconnect:
         telemetry_manager.disconnect(websocket)
 
-# --- Real-Time Agentic Orchestration Layer ---
 
 async def async_broadcast_anomaly(result):
     await telemetry_manager.broadcast(json.dumps({
-        "type": "anomaly_alert", 
+        "type": "anomaly_alert",
         "data": result
     }))
+
 
 def on_anomaly_callback(alert: dict):
     state = "machine_fault" if alert.get("severity") == "HIGH" else "machine_warning"
     machine_id = alert.get("machine_id", "PUMP-001")
-    
-    # HITL: Persist the incident instead of auto-invoking the agent
+
     db = SessionLocal()
     try:
         record = AnomalyRecord(
             machine_id=machine_id,
             timestamp=alert.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             type=state,
-            score=int(alert.get("reconstruction_score", 0.1) * 100), # Scale to 0-100 for UI
+            score=int(alert.get("reconstruction_score", 0.1) * 100),
             sensor_data=json.dumps(alert.get("sensor_readings", {}))
         )
         db.add(record)
         db.commit()
         db.refresh(record)
-        
-        # Broadcast the minimal alert to update the UI Archive
+
         full_alert_data = {
             "id": record.id,
             "machine_id": machine_id,
@@ -215,68 +215,70 @@ def on_anomaly_callback(alert: dict):
             "suspect_sensor": alert.get("suspect_sensor"),
             "recent_readings": alert.get("sensor_readings", {})
         }
-        
+
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(async_broadcast_anomaly(full_alert_data))
         except RuntimeError:
             asyncio.run(async_broadcast_anomaly(full_alert_data))
-            
+
     except Exception as e:
         logging.error(f"Failed to persist anomaly: {e}")
     finally:
         db.close()
 
+
 # Registry of stateful trackers (isolates consecutive counts per machine)
 anomaly_trackers: Dict[str, AnomalyService] = {}
+
 
 def get_tracker(machine_id: str) -> AnomalyService:
     if machine_id not in anomaly_trackers:
         anomaly_trackers[machine_id] = AnomalyService(
-            consecutive_threshold=3, 
+            consecutive_threshold=3,
             on_anomaly=on_anomaly_callback
         )
     return anomaly_trackers[machine_id]
 
+
 @app.post("/api/telemetry/push")
 async def push_telemetry(data: dict, background_tasks: BackgroundTasks):
-    """
-    Broadcasts live telemetry to WebSockets and asynchronously runs Anomaly Detection.
-    """
+    """Broadcasts live telemetry to WebSockets and asynchronously runs Anomaly Detection."""
     machine_id = data.get("machine_id", "PUMP-001")
     tracker = get_tracker(machine_id)
-    
-    # Run synchronously for broadcast extraction
-    result = tracker.process(data)
-    
-    # Broadcast with health score
+
+    try:
+        result = tracker.process(data)
+        health_score = result.get("health_score", 100)
+    except Exception as e:
+        logging.error(f"⚠️ Anomaly analysis failed for {machine_id}: {e}")
+        health_score = 100  # Fallback
+
     broadcast_payload = {
         "type": "telemetry",
         "data": {
             **data,
-            "health_score": result.get("health_score", 100)
+            "health_score": health_score
         }
     }
     await telemetry_manager.broadcast(json.dumps(broadcast_payload))
-    
-    return {"status": "broadcast_successful_and_analyzing", "health": result.get("health_score")}
+    return {"status": "broadcast_successful_and_analyzing", "health": health_score}
 
-import subprocess
-import sys
 
-# Management of multiple independent simulator processes
+# ── Simulator management ──────────────────────────────────────────────────────
 simulator_processes: Dict[str, subprocess.Popen] = {}
+
 
 @app.post("/api/simulator/start")
 async def start_simulator(machine_id: str = "PUMP-001"):
     global simulator_processes
     if machine_id not in simulator_processes or simulator_processes[machine_id].poll() is not None:
-        # Start new process for the specific machine
         proc = subprocess.Popen([sys.executable, "-m", "simulator.sensor_simulator", "--machine_id", machine_id])
         simulator_processes[machine_id] = proc
         logging.info(f"🚀 Started simulator for {machine_id} (PID: {proc.pid})")
         return {"status": "started", "machine_id": machine_id, "pid": proc.pid}
     return {"status": "already_running", "machine_id": machine_id}
+
 
 @app.post("/api/simulator/stop")
 async def stop_simulator(machine_id: str = "PUMP-001"):
@@ -293,12 +295,40 @@ async def stop_simulator(machine_id: str = "PUMP-001"):
         return {"status": "stopped", "machine_id": machine_id}
     return {"status": "not_running", "machine_id": machine_id}
 
+
 @app.get("/api/simulator/status")
 async def get_simulator_status():
     """Returns a list of machine IDs that are currently being simulated."""
     active = [mid for mid, proc in simulator_processes.items() if proc.poll() is None]
     return {"active_simulators": active}
 
-# --- Modular Machine Registry ---
+
+@app.get("/api/machines/{machine_id}/config")
+async def get_machine_config(machine_id: str):
+    """Return the registered sensor IDs for this machine, or defaults.
+    
+    __file__ is inside api/ — go up one level to reach backend/data/processed/.
+    """
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_path = os.path.join(backend_dir, "data", "processed", "sensor_configs.json")
+    logging.info(f"📂 Config lookup: {config_path}")
+
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            all_configs = json.load(f)
+            if machine_id in all_configs:
+                sensor_ids = list(all_configs[machine_id].keys())
+                logging.info(f"✅ Found config for {machine_id}: {sensor_ids}")
+                return {"sensors": sensor_ids, "config": all_configs[machine_id]}
+
+    # Fallback to defaults
+    from simulator.anomaly_injector import get_machine_config as get_default
+    default_cfg = get_default(machine_id)
+    sensor_ids = list(default_cfg.keys())
+    logging.info(f"ℹ️ Using default config for {machine_id}: {sensor_ids}")
+    return {"sensors": sensor_ids, "config": default_cfg}
+
+
+# ── Modular Machine Registry ──────────────────────────────────────────────────
 from api.machine_api import router as machine_registry_router
 app.include_router(machine_registry_router)

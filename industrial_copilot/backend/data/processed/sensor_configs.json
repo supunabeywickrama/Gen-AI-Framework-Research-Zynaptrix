@@ -1,0 +1,42 @@
+{
+  "TEA_0001": {
+    "lem_1": {
+      "sensor_id": "lem_1",
+      "sensor_name": "LEM Current Sensor",
+      "mu": 0.0,
+      "sigma": 1.0
+    },
+    "thermistor_1": {
+      "sensor_id": "thermistor_1",
+      "sensor_name": "Thermistor",
+      "mu": 10000.0,
+      "sigma": 200.0
+    },
+    "encoder_!": {
+      "sensor_id": "encoder_!",
+      "sensor_name": "Encoder",
+      "mu": 18500.0,
+      "sigma": 12500.0
+    },
+    "ct_1": {
+      "sensor_id": "ct_1",
+      "sensor_name": "Ground Fault CT",
+      "mu": 55.0,
+      "sigma": 5.0
+    }
+  },
+  "TEST_AUTO_002": {
+    "flow_rate": {
+      "sensor_id": "flow_rate",
+      "sensor_name": "Flow Rate",
+      "mu": 50.0,
+      "sigma": 5.0
+    },
+    "pressure_p1": {
+      "sensor_id": "pressure_p1",
+      "sensor_name": "Pressure P1",
+      "mu": 50.0,
+      "sigma": 5.0
+    }
+  }
+}

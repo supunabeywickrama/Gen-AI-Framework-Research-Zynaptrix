@@ -3,9 +3,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 interface TelemetryPoint {
   machineId: string;
   time: string;
-  temperature: number;
-  current: number;
-  vibration: number;
+  [key: string]: any;
 }
 
 // Structured Procedure Types

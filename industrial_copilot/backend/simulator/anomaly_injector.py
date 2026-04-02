@@ -8,8 +8,24 @@ Used by both the batch dataset generator and the real-time simulator.
 import numpy as np
 
 
+import os
+import json
+
 def get_machine_config(machine_id: str) -> dict:
-    """Returns base sensor ranges and noise profiles for specific machines."""
+    """Returns base sensor ranges and noise profiles for specific machines either from dynamic JSON or defaults."""
+    config_path = os.path.join(os.path.dirname(__file__), "..", "data", "processed", "sensor_configs.json")
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            all_configs = json.load(f)
+            if machine_id in all_configs:
+                # all_configs[machine_id] = { "sensor_id": {"sensor_id": "...", "sensor_name": "...", "mu": 50.0, "sigma": 5.0} }
+                dyn_cfg = {}
+                for sid, data in all_configs[machine_id].items():
+                    dyn_cfg[sid] = (data.get("mu", 50.0), data.get("sigma", 5.0))
+                if dyn_cfg:
+                    return dyn_cfg
+                    
+    # Fallback Defaults
     if "LATHE" in machine_id.upper():
         return {
             "temperature":   (45, 2),    # Spindle Temperature
@@ -42,17 +58,16 @@ def normal_reading(machine_id: str = "PUMP-001") -> dict:
 
 def machine_fault_reading(machine_id: str = "PUMP-001") -> dict:
     """
-    Simulates a mechanical fault (e.g. motor bearing wear).
+    Simulates a mechanical fault by shifting means by an unstable variance.
     """
     cfg = get_machine_config(machine_id)
-    # Increase vibration and current, drop speed
-    return {
-        "temperature":   np.random.normal(cfg["temperature"][0] - 5, cfg["temperature"][1]),
-        "motor_current": np.random.normal(cfg["motor_current"][0] * 1.6, cfg["motor_current"][1] * 2),
-        "vibration":     np.random.normal(cfg["vibration"][0] * 3.5, cfg["vibration"][1] * 5),
-        "speed":         np.random.normal(cfg["speed"][0] * 0.8, cfg["speed"][1] * 2),
-        "pressure":      np.random.normal(cfg["pressure"][0] * 0.9, cfg["pressure"][1]),
-    }
+    fault_reading = {}
+    for k, (mu, sigma) in cfg.items():
+        if "temp" in k.lower() or "vibration" in k.lower() or "current" in k.lower():
+            fault_reading[k] = np.random.normal(mu * 1.5, sigma * 3)
+        else:
+            fault_reading[k] = np.random.normal(mu * 0.8, sigma * 2)
+    return fault_reading
 
 def sensor_freeze_reading(frozen_values: dict | None = None) -> dict:
     """Simulates a stuck/frozen sensor."""
@@ -61,20 +76,24 @@ def sensor_freeze_reading(frozen_values: dict | None = None) -> dict:
     return {k: v for k, v in frozen_values.items()}
 
 def sensor_drift_reading(drift_step: float = 0.0, machine_id: str = "PUMP-001") -> dict:
-    """Simulates a temperature sensor that gradually drifts upward."""
+    """Simulates the first sensor gradually drifting upward."""
     base = normal_reading(machine_id)
-    base["temperature"] += drift_step
+    # Pick the first key as the target for drift
+    drift_key = list(base.keys())[0] if base else "temperature"
+    if drift_key in base:
+        base[drift_key] += drift_step
     return base
 
-def idle_reading() -> dict:
+def idle_reading(machine_id: str = "PUMP-001") -> dict:
     """Machine is powered off / idle."""
-    return {
-        "temperature":   np.random.normal(25, 1),
-        "motor_current": 0.0,
-        "vibration":     0.0,
-        "speed":         0.0,
-        "pressure":      0.0,
-    }
+    cfg = get_machine_config(machine_id)
+    idle = {}
+    for k, (mu, sigma) in cfg.items():
+        if "temp" in k.lower():
+            idle[k] = np.random.normal(25, 1) # ambient temp
+        else:
+            idle[k] = 0.0
+    return idle
 
 STATE_GENERATORS = {
     "normal":        normal_reading,
