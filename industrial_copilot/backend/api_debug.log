@@ -270,3 +270,25 @@ VERIFIED: Anomaly #158 found in DB.
 SUCCESS: User message stored for ID 158.
 SUCCESS: Graph execution completed.
 SUCCESS: Agent response stored for ID 158.
+
+--- INQUIRY START: Anomaly #None ---
+SUCCESS: User message stored for ID None.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID None.
+
+--- INQUIRY START: Anomaly #None ---
+SUCCESS: User message stored for ID None.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID None.
+
+--- INQUIRY START: Anomaly #1036 ---
+VERIFIED: Anomaly #1036 found in DB.
+SUCCESS: User message stored for ID 1036.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1036.
+
+--- INQUIRY START: Anomaly #1036 ---
+VERIFIED: Anomaly #1036 found in DB.
+SUCCESS: User message stored for ID 1036.
+SUCCESS: Graph execution completed.
+SUCCESS: Agent response stored for ID 1036.

@@ -7,8 +7,16 @@ export interface Machine {
   manual_id: string;
 }
 
+export interface SensorMeta {
+  sensor_id: string;
+  sensor_name: string;
+  icon_type: string;
+  unit: string;
+}
+
 interface MachineState {
   machines: Machine[];
+  machineConfigs: Record<string, SensorMeta[]>;
   currentMachineId: string;
   loading: boolean;
   error: string | null;
@@ -16,6 +24,7 @@ interface MachineState {
 
 const initialState: MachineState = {
   machines: [],
+  machineConfigs: {},
   currentMachineId: 'PUMP-001',
   loading: false,
   error: null,
@@ -29,11 +38,10 @@ export const fetchMachines = createAsyncThunk('machines/fetchMachines', async ()
     return (await response.json()) as Machine[];
 });
 
-export const registerMachine = createAsyncThunk('machines/registerMachine', async (machine: Machine) => {
+export const registerMachine = createAsyncThunk('machines/registerMachine', async (formData: FormData) => {
     const response = await fetch(`${API_BASE}/api/machines`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(machine),
+        body: formData,
     });
     if (!response.ok) throw new Error('Failed to register machine');
     return (await response.json()) as Machine;
@@ -45,6 +53,17 @@ export const deleteMachine = createAsyncThunk('machines/deleteMachine', async (m
     });
     if (!response.ok) throw new Error('Failed to decommission machine');
     return machineId;
+});
+
+export const fetchMachineConfig = createAsyncThunk('machines/fetchConfig', async (machineId: string) => {
+    const response = await fetch(`${API_BASE}/api/machines/${machineId}/config`);
+    if (!response.ok) throw new Error('Failed to fetch machine config');
+    const data = await response.json();
+    // API returns { sensors: [...], sensors_meta: [{sensor_id, sensor_name, icon_type, unit}] }
+    const sensorsMeta: SensorMeta[] = data.sensors_meta || data.sensors?.map((id: string) => ({
+        sensor_id: id, sensor_name: id, icon_type: 'generic', unit: 'units'
+    })) || [];
+    return { machineId, sensorsMeta };
 });
 
 const machineSlice = createSlice({
@@ -99,6 +118,10 @@ const machineSlice = createSlice({
       .addCase(deleteMachine.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Deletion failed';
+      })
+      .addCase(fetchMachineConfig.fulfilled, (state, action) => {
+        // Stores the SensorMeta[] for the machine
+        state.machineConfigs[action.payload.machineId] = action.payload.sensorsMeta;
       });
   },
 });

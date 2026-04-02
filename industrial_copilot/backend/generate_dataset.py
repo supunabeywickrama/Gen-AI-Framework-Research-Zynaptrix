@@ -20,7 +20,6 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config.settings import (
     STATE_ROW_DISTRIBUTION,
-    SENSOR_COLUMNS,
     MOCK_DATA_PATH,
 )
 from simulator.anomaly_injector import (
@@ -76,19 +75,19 @@ def generate_dataset(machine_id: str = "PUMP-001", total_rows: int = 20_000, see
             elif state == "sensor_drift":
                 drift_step = drift_step + float(random.uniform(0.05, 0.3))
                 reading = sensor_drift_reading(drift_step, machine_id)
-            else:  # idle
-                reading = idle_reading()
+            elif state == "idle":  # idle
+                reading = idle_reading(machine_id)
 
             row = {
                 "timestamp":     timestamp.isoformat(),
                 "machine_id":    machine_id,
-                "temperature":   round(reading["temperature"], 3),
-                "motor_current": round(reading["motor_current"], 3),
-                "vibration":     round(reading["vibration"], 4),
-                "speed":         round(reading["speed"], 2),
-                "pressure":      round(reading["pressure"], 3),
                 "state":         state,
             }
+            # Dynamically inject features
+            for k, v in reading.items():
+                if k not in ["timestamp", "machine_id", "state"]:
+                    row[k] = round(v, 4)
+                    
             rows.append(row)
             tick += 1
 
@@ -119,7 +118,8 @@ def validate_dataset(df: pd.DataFrame, machine_id: str) -> None:
 
     print()
     print("  Sensor statistics (mean ± std):")
-    for col in SENSOR_COLUMNS:
+    sensor_cols = [c for c in df.columns if c not in ["timestamp", "machine_id", "state"]]
+    for col in sensor_cols:
         m = df[col].mean()
         s = df[col].std()
         print(f"    {col:<18s}  {m:8.3f} ± {s:.3f}")

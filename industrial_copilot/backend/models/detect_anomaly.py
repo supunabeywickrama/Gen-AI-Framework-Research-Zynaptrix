@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config.settings import SENSOR_COLUMNS
+
 
 log = logging.getLogger(__name__)
 
@@ -110,8 +110,12 @@ class AnomalyDetector:
         machine_id = reading.get("machine_id", "PUMP-001")
         assets = self._get_assets(machine_id)
         
+        from simulator.anomaly_injector import get_machine_config
+        cfg = get_machine_config(machine_id)
+        sensor_cols = list(cfg.keys())
+        
         # Extract only sensor columns for model
-        x = np.array([[reading[c] for c in SENSOR_COLUMNS]], dtype=np.float32)
+        x = np.array([[float(reading.get(c, 0.0)) for c in sensor_cols]], dtype=np.float32)
         x_scaled = assets["scaler"].transform(x)
         x_pred   = assets["model"].predict(x_scaled, verbose=0)
         score    = float(np.mean(np.square(x_scaled - x_pred)))
@@ -130,7 +134,11 @@ class AnomalyDetector:
     def detect_batch(self, df: pd.DataFrame, machine_id: str = "PUMP-001") -> pd.DataFrame:
         """Detect anomalies on an entire DataFrame for one machine."""
         assets = self._get_assets(machine_id)
-        X = df[SENSOR_COLUMNS].values.astype(np.float32)
+        from simulator.anomaly_injector import get_machine_config
+        cfg = get_machine_config(machine_id)
+        sensor_cols = list(cfg.keys())
+        
+        X = df[sensor_cols].values.astype(np.float32)
         X_scaled = assets["scaler"].transform(X)
         X_pred   = assets["model"].predict(X_scaled, verbose=0)
         errors   = np.mean(np.square(X_scaled - X_pred), axis=1)
