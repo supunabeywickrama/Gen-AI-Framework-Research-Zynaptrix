@@ -434,4 +434,10 @@ async def get_machine_config(machine_id: str):
 
 # ── Modular Machine Registry ──────────────────────────────────────────────────
 from api.machine_api import router as machine_registry_router
+from api.assistant_api import router as assistant_router
 app.include_router(machine_registry_router)
+app.include_router(assistant_router)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

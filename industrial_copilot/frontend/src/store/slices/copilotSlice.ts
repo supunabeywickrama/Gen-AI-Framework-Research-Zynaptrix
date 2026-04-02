@@ -79,6 +79,8 @@ export interface ChatMessage {
   stepResponse?: StepResponse;
   isDocAlert?: boolean; // New flag for documentation-gap warnings
   metadata?: any;
+  timestamp?: string;
+  context_source?: string;
 }
 
 export interface AnomalyRecord {
@@ -102,6 +104,8 @@ interface CopilotState {
   activeAgents: string[];
   fleetHealth: Record<string, number>;
   activeProcedure: Record<string, ActiveProcedure>;
+  assistantHistory: ChatMessage[];
+  isAssistantOpen: boolean;
 }
 
 const initialState: CopilotState = {
@@ -119,6 +123,10 @@ const initialState: CopilotState = {
   activeAgents: ['Sensor', 'Diagnostic', 'Strategy', 'Critic', 'RAG'],
   fleetHealth: {},
   activeProcedure: {},
+  assistantHistory: [
+    { role: 'agent', content: "👋 Hello! I am your **Industrial System Assistant**. I can help you register new assets, ingest technical manuals, or explain how our anomaly detection works. How can I assist you today?" }
+  ],
+  isAssistantOpen: false,
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -390,6 +398,19 @@ export const sendStepMessage = createAsyncThunk(
   }
 );
 
+export const inquireAssistant = createAsyncThunk(
+  'copilot/inquireAssistant',
+  async ({ query, machineId }: { query: string; machineId?: string }) => {
+    const response = await fetch(`${API_BASE}/api/copilot/assistant`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, machine_id: machineId }),
+    });
+    if (!response.ok) throw new Error('Assistant failed to respond');
+    return response.json();
+  }
+);
+
 const copilotSlice = createSlice({
   name: 'copilot',
   initialState,
@@ -416,8 +437,17 @@ const copilotSlice = createSlice({
     setSystemState(state, action: PayloadAction<'NORMAL' | 'ANOMALY'>) {
       state.systemState = action.payload;
     },
-    setAnomalyScore(state, action: PayloadAction<number>) {
+    setAnomalyScore: (state, action: PayloadAction<number>) => {
       state.anomalyScore = action.payload;
+    },
+    setAssistantOpen: (state, action: PayloadAction<boolean>) => {
+      state.isAssistantOpen = action.payload;
+      if (action.payload) {
+        state.activeAnomaly = null; // Close active anomaly if opening assistant
+      }
+    },
+    addAssistantMessage: (state, action: PayloadAction<ChatMessage>) => {
+      state.assistantHistory.push(action.payload);
     },
     setActiveAgents(state, action: PayloadAction<string[]>) {
       state.activeAgents = action.payload;
@@ -645,14 +675,23 @@ const copilotSlice = createSlice({
     
     // Resolution Logic
     builder.addCase(resolveAnomaly.fulfilled, (state, action) => {
-        const { anomalyId, data } = action.payload;
-        const record = state.anomalyHistory.find(r => r.id === anomalyId);
-        if (record) record.resolved = true;
-        if (state.activeAnomaly?.id === anomalyId) state.activeAnomaly.resolved = true;
-        
-        state.chatHistory[anomalyId.toString()].push({
-            role: 'agent',
-            content: `✅ **Incident Resolved & Archived**\n\n**Action Summary:**\n${data.summary}`
+        const { anomalyId } = action.meta.arg;
+        if (state.activeAnomaly?.id === anomalyId) {
+          state.activeAnomaly = null;
+        }
+        // Remove from active state (History is already updated in anomalyHistory)
+        delete state.chatHistory[anomalyId.toString()];
+        delete state.activeProcedure[anomalyId.toString()];
+    })
+    // --- Assistant Cases ---
+    .addCase(inquireAssistant.pending, (state) => {
+        // Option to add a 'thinking' state if needed
+    })
+    .addCase(inquireAssistant.fulfilled, (state, action) => {
+        state.assistantHistory.push({
+          role: 'agent',
+          content: action.payload.content,
+          timestamp: action.payload.timestamp
         });
     });
 
@@ -908,10 +947,11 @@ export const {
   setActiveAnomaly,
   setSystemState, 
   setAnomalyScore,
+  setAssistantOpen,
+  addAssistantMessage,
   setActiveAgents,
   respondToStep,
   forceAdvanceStep
 } = copilotSlice.actions;
 
 export default copilotSlice.reducer;
-
