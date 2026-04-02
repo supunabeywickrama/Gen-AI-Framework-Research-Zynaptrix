@@ -188,10 +188,10 @@ async def register_machine(request: Request, db: Session = Depends(get_db)):
                     pdf_bytes = await pdf_file.read()
                     pdf_text = parser.parse_pdf(pdf_bytes)
                     config = parser.extract_sensor_config(s_name, s_id, pdf_text)
-                    sensor_configs[s_id] = config
                 else:
-                    # Fallback default if no pdf provided
-                    sensor_configs[s_id] = {"sensor_id": s_id, "sensor_name": s_name, "mu": 50.0, "sigma": 5.0}
+                    # No PDF — still use OpenAI to estimate from sensor name
+                    config = parser.extract_sensor_config_no_pdf(s_name, s_id)
+                sensor_configs[s_id] = config
 
             # Save the configurations
             config_path = os.path.join(os.path.dirname(__file__), "..", "data", "processed", "sensor_configs.json")

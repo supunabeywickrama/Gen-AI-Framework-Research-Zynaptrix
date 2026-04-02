@@ -3,26 +3,54 @@
     "lem_1": {
       "sensor_id": "lem_1",
       "sensor_name": "LEM Current Sensor",
-      "mu": 0.0,
-      "sigma": 1.0
+      "mu": 50.0,
+      "sigma": 2.0,
+      "unit": "A",
+      "min_normal": 45.0,
+      "max_normal": 55.0,
+      "fault_high": 60.0,
+      "fault_low": null,
+      "fault_direction": "high",
+      "icon_type": "current"
     },
     "thermistor_1": {
       "sensor_id": "thermistor_1",
       "sensor_name": "Thermistor",
-      "mu": 10000.0,
-      "sigma": 200.0
+      "mu": 25.0,
+      "sigma": 0.5,
+      "unit": "\u00b0C",
+      "min_normal": 20.0,
+      "max_normal": 30.0,
+      "fault_high": 35.0,
+      "fault_low": null,
+      "fault_direction": "high",
+      "icon_type": "temperature"
     },
     "encoder_!": {
       "sensor_id": "encoder_!",
       "sensor_name": "Encoder",
-      "mu": 18500.0,
-      "sigma": 12500.0
+      "mu": 1500.0,
+      "sigma": 50.0,
+      "unit": "rpm",
+      "min_normal": 1400.0,
+      "max_normal": 1600.0,
+      "fault_high": 1700.0,
+      "fault_low": null,
+      "fault_direction": "high",
+      "icon_type": "speed"
     },
     "ct_1": {
       "sensor_id": "ct_1",
       "sensor_name": "Ground Fault CT",
-      "mu": 55.0,
-      "sigma": 5.0
+      "mu": 0.05,
+      "sigma": 0.01,
+      "unit": "A",
+      "min_normal": 0.02,
+      "max_normal": 0.1,
+      "fault_high": 0.2,
+      "fault_low": null,
+      "fault_direction": "high",
+      "icon_type": "current"
     }
   },
   "TEST_AUTO_002": {

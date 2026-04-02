@@ -7,9 +7,16 @@ export interface Machine {
   manual_id: string;
 }
 
+export interface SensorMeta {
+  sensor_id: string;
+  sensor_name: string;
+  icon_type: string;
+  unit: string;
+}
+
 interface MachineState {
   machines: Machine[];
-  machineConfigs: Record<string, any>;
+  machineConfigs: Record<string, SensorMeta[]>;
   currentMachineId: string;
   loading: boolean;
   error: string | null;
@@ -52,9 +59,11 @@ export const fetchMachineConfig = createAsyncThunk('machines/fetchConfig', async
     const response = await fetch(`${API_BASE}/api/machines/${machineId}/config`);
     if (!response.ok) throw new Error('Failed to fetch machine config');
     const data = await response.json();
-    // API returns { sensors: [...], config: {...} }
-    const sensors: string[] = data.sensors || Object.keys(data);
-    return { machineId, sensors };
+    // API returns { sensors: [...], sensors_meta: [{sensor_id, sensor_name, icon_type, unit}] }
+    const sensorsMeta: SensorMeta[] = data.sensors_meta || data.sensors?.map((id: string) => ({
+        sensor_id: id, sensor_name: id, icon_type: 'generic', unit: 'units'
+    })) || [];
+    return { machineId, sensorsMeta };
 });
 
 const machineSlice = createSlice({
@@ -111,8 +120,8 @@ const machineSlice = createSlice({
         state.error = action.error.message || 'Deletion failed';
       })
       .addCase(fetchMachineConfig.fulfilled, (state, action) => {
-        // Stores the list of sensor IDs for the machine
-        state.machineConfigs[action.payload.machineId] = action.payload.sensors;
+        // Stores the SensorMeta[] for the machine
+        state.machineConfigs[action.payload.machineId] = action.payload.sensorsMeta;
       });
   },
 });

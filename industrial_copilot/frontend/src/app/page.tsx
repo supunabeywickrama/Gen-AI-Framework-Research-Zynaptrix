@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-// Step-by-step procedure flow is now inline in chat
 import { 
   Activity, 
   AlertTriangle, 
@@ -23,11 +22,26 @@ import {
   Maximize2,
   Minimize2,
   Wrench,
-  MessageCircle
+  MessageCircle,
+  Zap,
+  Droplets,
+  Wind,
+  Ruler,
+  Weight,
+  RotateCw,
+  Radio,
+  Sun,
+  FlaskConical,
+  Magnet,
+  Cpu,
+  TrendingUp,
+  Hash,
+  Move
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
+import { SensorMeta } from '../store/slices/machineSlice';
 import { 
   addTelemetry, 
   addChatMessage, 
@@ -43,6 +57,37 @@ import {
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId, fetchMachineConfig } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
+
+// ── Icon mapping: icon_type (from OpenAI) → Lucide component + accent color ──
+const ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
+  temperature:   { icon: Thermometer,  color: 'rose' },
+  current:       { icon: Zap,          color: 'amber' },
+  vibration:     { icon: VibrateIcon,  color: 'purple' },
+  pressure:      { icon: Gauge,        color: 'blue' },
+  speed:         { icon: RotateCw,     color: 'cyan' },
+  flow:          { icon: Droplets,     color: 'teal' },
+  voltage:       { icon: Zap,          color: 'yellow' },
+  humidity:      { icon: Wind,         color: 'sky' },
+  distance:      { icon: Ruler,        color: 'indigo' },
+  load:          { icon: Weight,       color: 'orange' },
+  torque:        { icon: Magnet,       color: 'pink' },
+  position:      { icon: Move,         color: 'violet' },
+  power:         { icon: TrendingUp,   color: 'emerald' },
+  frequency:     { icon: Radio,        color: 'lime' },
+  light:         { icon: Sun,          color: 'yellow' },
+  gas:           { icon: FlaskConical, color: 'green' },
+  force:         { icon: Activity,     color: 'red' },
+  conductivity:  { icon: Cpu,          color: 'fuchsia' },
+  ph:            { icon: FlaskConical, color: 'teal' },
+  weight:        { icon: Weight,       color: 'stone' },
+  angle:         { icon: Move,         color: 'cyan' },
+  counter:       { icon: Hash,         color: 'slate' },
+  generic:       { icon: Server,       color: 'blue' },
+};
+
+function getSensorDisplay(iconType: string): { icon: React.ElementType; color: string } {
+  return ICON_MAP[iconType] || ICON_MAP['generic'];
+}
 
 export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
@@ -252,29 +297,49 @@ export default function IndustrialCopilotDashboard() {
           
           <div className="grid grid-cols-3 gap-4">
              {(() => {
-                const config = machineConfigs[currentMachineId];
-                const sensorKeys = Object.keys(latestReading).filter(k => !['machineId', 'time', 'machine_id', 'state'].includes(k));
-                
-                // Use keys from latest telemetry, or if empty, use keys from machine config, or fallback to defaults
-                let displaySensors = sensorKeys.length > 0 ? sensorKeys : ['temperature', 'current', 'vibration'];
-                // machineConfigs stores a string[] of sensor IDs
-                if (sensorKeys.length === 0 && config && Array.isArray(config)) {
-                   displaySensors = config;
+                // SensorMeta[] from machineConfigs, or derive from live telemetry, or fallback
+                const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
+                const liveSensorKeys = Object.keys(latestReading).filter(
+                  k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
+                );
+
+                // Build display list: prefer machineConfigs (has icon_type), fall back to live keys
+                let displayList: SensorMeta[] = metaList.length > 0
+                  ? metaList
+                  : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
+
+                // Last resort: defaults
+                if (displayList.length === 0) {
+                  displayList = [
+                    { sensor_id: 'temperature', sensor_name: 'Temperature', icon_type: 'temperature', unit: '°C' },
+                    { sensor_id: 'motor_current', sensor_name: 'Motor Current', icon_type: 'current', unit: 'A' },
+                    { sensor_id: 'vibration', sensor_name: 'Vibration', icon_type: 'vibration', unit: 'mm/s' },
+                  ];
                 }
 
-                const colors = ['blue', 'emerald', 'amber', 'purple', 'rose', 'cyan'];
-                const icons = [Thermometer, Gauge, VibrateIcon, Activity, Database, Server];
-                return displaySensors.map((key, i) => {
-                  const val = latestReading[key] !== undefined ? Number(latestReading[key]).toFixed(2) : '0.00';
-                  const color = colors[i % colors.length];
-                  const Icon = icons[i % icons.length];
+                const chartColors = ['blue', 'emerald', 'amber', 'purple', 'rose', 'cyan', 'teal', 'orange'];
+
+                return displayList.map((sensor, i) => {
+                  const { icon: Icon, color } = getSensorDisplay(sensor.icon_type);
+                  const rawVal = latestReading[sensor.sensor_id];
+                  const val = rawVal !== undefined ? Number(rawVal).toFixed(2) : '—';
+                  const accentColor = chartColors[i % chartColors.length];
                   return (
-                   <div key={key} className={`bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group`}>
-                      <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${color}-500`}>
+                   <div key={sensor.sensor_id} className={`bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group transition-all hover:border-slate-700`}>
+                      <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${accentColor}-500`}>
                          <Icon size={60} />
                       </div>
-                      <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{key.replace(/_/g, ' ')}</h3>
-                      <p className="text-3xl font-black text-white">{val} <span className="text-sm text-slate-600 font-light">units</span></p>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`p-1.5 rounded-lg bg-${accentColor}-500/10`}>
+                          <Icon size={14} className={`text-${accentColor}-400`} />
+                        </div>
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          {sensor.sensor_name.replace(/_/g, ' ')}
+                        </h3>
+                      </div>
+                      <p className="text-3xl font-black text-white">
+                        {val} <span className="text-xs text-slate-500 font-light">{sensor.unit}</span>
+                      </p>
                    </div>
                   );
                 });
@@ -288,13 +353,18 @@ export default function IndustrialCopilotDashboard() {
                </h2>
                <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500">
                   {(() => {
-                    const sensorKeys = Object.keys(latestReading).filter(k => !['machineId', 'time', 'machine_id', 'state'].includes(k));
-                    const displaySensors = sensorKeys.length > 0 ? sensorKeys : ['temperature', 'current', 'vibration'];
-                    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500'];
-                    return displaySensors.map((key, i) => (
-                      <span key={key} className="flex items-center gap-2">
+                    const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
+                    const liveSensorKeys = Object.keys(latestReading).filter(
+                      k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
+                    );
+                    const displayList = metaList.length > 0
+                      ? metaList
+                      : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
+                    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500', 'bg-teal-500', 'bg-orange-500'];
+                    return displayList.map((sensor, i) => (
+                      <span key={sensor.sensor_id} className="flex items-center gap-2">
                         <div className={`h-1.5 w-4 ${colors[i % colors.length]} rounded`}></div>
-                        {key.substring(0, 4).toUpperCase()}
+                        {sensor.sensor_name.substring(0, 5).toUpperCase()}
                       </span>
                     ));
                   })()}
@@ -311,15 +381,16 @@ export default function IndustrialCopilotDashboard() {
                       contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
                     />
                     {(() => {
-                       const config = machineConfigs[currentMachineId];
-                       const sensorKeys = Object.keys(latestReading).filter(k => !['machineId', 'time', 'machine_id', 'state'].includes(k));
-                       let displaySensors = sensorKeys.length > 0 ? sensorKeys : ['temperature', 'current', 'vibration'];
-                       if (sensorKeys.length === 0 && config && Array.isArray(config)) {
-                          displaySensors = config;
-                       }
-                       const colors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#06b6d4'];
-                       return displaySensors.map((key, i) => (
-                         <Line key={key} type="monotone" dataKey={key} stroke={colors[i % colors.length]} strokeWidth={3} dot={false} animationDuration={300} />
+                       const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
+                       const liveSensorKeys = Object.keys(latestReading).filter(
+                         k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
+                       );
+                       const displayList = metaList.length > 0
+                         ? metaList
+                         : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
+                       const colors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#06b6d4', '#14b8a6', '#f97316'];
+                       return displayList.map((sensor, i) => (
+                         <Line key={sensor.sensor_id} type="monotone" dataKey={sensor.sensor_id} stroke={colors[i % colors.length]} strokeWidth={3} dot={false} animationDuration={300} />
                        ));
                     })()}
                   </LineChart>

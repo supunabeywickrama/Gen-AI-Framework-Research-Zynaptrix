@@ -305,10 +305,7 @@ async def get_simulator_status():
 
 @app.get("/api/machines/{machine_id}/config")
 async def get_machine_config(machine_id: str):
-    """Return the registered sensor IDs for this machine, or defaults.
-    
-    __file__ is inside api/ — go up one level to reach backend/data/processed/.
-    """
+    """Return the registered sensor IDs + icon_type for this machine, or defaults."""
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_path = os.path.join(backend_dir, "data", "processed", "sensor_configs.json")
     logging.info(f"📂 Config lookup: {config_path}")
@@ -317,16 +314,28 @@ async def get_machine_config(machine_id: str):
         with open(config_path, "r") as f:
             all_configs = json.load(f)
             if machine_id in all_configs:
-                sensor_ids = list(all_configs[machine_id].keys())
-                logging.info(f"✅ Found config for {machine_id}: {sensor_ids}")
-                return {"sensors": sensor_ids, "config": all_configs[machine_id]}
+                machine_cfg = all_configs[machine_id]
+                # Build a list of {sensor_id, sensor_name, icon_type, unit}
+                sensors_meta = [
+                    {
+                        "sensor_id":   sid,
+                        "sensor_name": sdata.get("sensor_name", sid),
+                        "icon_type":   sdata.get("icon_type", "generic"),
+                        "unit":        sdata.get("unit", "units"),
+                    }
+                    for sid, sdata in machine_cfg.items()
+                ]
+                logging.info(f"✅ Found config for {machine_id}: {[s['sensor_id'] for s in sensors_meta]}")
+                return {"sensors": [s["sensor_id"] for s in sensors_meta], "sensors_meta": sensors_meta}
 
     # Fallback to defaults
     from simulator.anomaly_injector import get_machine_config as get_default
     default_cfg = get_default(machine_id)
-    sensor_ids = list(default_cfg.keys())
-    logging.info(f"ℹ️ Using default config for {machine_id}: {sensor_ids}")
-    return {"sensors": sensor_ids, "config": default_cfg}
+    sensors_meta = [
+        {"sensor_id": sid, "sensor_name": sid, "icon_type": "generic", "unit": "units"}
+        for sid in default_cfg.keys()
+    ]
+    return {"sensors": list(default_cfg.keys()), "sensors_meta": sensors_meta}
 
 
 # ── Modular Machine Registry ──────────────────────────────────────────────────
