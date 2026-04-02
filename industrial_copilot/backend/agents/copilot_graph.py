@@ -82,7 +82,7 @@ def knowledge_retrieval_node(state: CopilotState):
         mode = RAGMode.CONVERSATIONAL_WIZARD
         query = user_q.replace("[CONVERSATIONAL_WIZARD]", "").strip()
         if not query:
-            query = "Provide the first instruction from the repair manual."
+            query = "Begin the guided repair by providing necessary safety and preparation steps (Lockout/Tagout, PPE) from the manual."
     elif user_q.strip():
         query = f"Diagnostic Summary only for: {user_q} (Anomaly: {state['machine_state']})"
     else:
@@ -166,6 +166,7 @@ def critic_node(state: CopilotState):
     # HITL: If this is a specific user query, provide a clean chat response.
     # If it's an initial anomaly detection (no user query yet), provide a brief summary.
     user_q = state.get('user_query')
+    image_tags = "\n".join([f"![Image]({img})" for img in state.get('retrieved_images', [])])
     if user_q and user_q.strip():
         final_output = state['strategy_report']
     else:

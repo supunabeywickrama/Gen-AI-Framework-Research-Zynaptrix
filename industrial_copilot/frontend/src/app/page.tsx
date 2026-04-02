@@ -423,7 +423,7 @@ export default function IndustrialCopilotDashboard() {
              })()}
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex-1 flex flex-col">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[600px] flex flex-col">
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-xl font-black flex items-center gap-3 text-white">
                  <Activity className="text-blue-500" /> Real-Time Sensor Stream
