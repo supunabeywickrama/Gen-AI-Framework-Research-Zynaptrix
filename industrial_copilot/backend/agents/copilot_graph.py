@@ -82,7 +82,7 @@ def knowledge_retrieval_node(state: CopilotState):
         mode = RAGMode.CONVERSATIONAL_WIZARD
         query = user_q.replace("[CONVERSATIONAL_WIZARD]", "").strip()
         if not query:
-            query = "Provide the first instruction from the repair manual."
+            query = "Begin the guided repair by providing necessary safety and preparation steps (Lockout/Tagout, PPE) from the manual."
     elif user_q.strip():
         query = f"Diagnostic Summary only for: {user_q} (Anomaly: {state['machine_state']})"
     else:
@@ -96,10 +96,23 @@ def knowledge_retrieval_node(state: CopilotState):
             from unified_rag.db.models import Machine
             
             db = SessionLocal()
-            # Lookup the machine's specific manual
-            machine_record = db.query(Machine).filter(Machine.machine_id == machine_id).first()
-            manual_id = machine_record.manual_id if machine_record else "Zynaptrix_9000"
-            db.close()
+            try:
+                # 1. Lookup the machine's specific manual
+                machine_record = db.query(Machine).filter(Machine.machine_id == machine_id).first()
+                manual_id = machine_record.manual_id if machine_record else "Zynaptrix_9000"
+                
+                # 2. PROVENANCE CHECK: Does this manual actually have content in our RAG DB?
+                from unified_rag.db.models import ManualChunk
+                chunk_count = db.query(ManualChunk).filter(ManualChunk.manual_id == manual_id).count()
+                
+                if chunk_count == 0:
+                    logger.warning(f"⚠️ [Provenance] No manual content found for {manual_id}. Flagging for disclaimer.")
+                    # Prepend a hidden flag to the query so the RAG knows to DISCLAIMER it.
+                    query = f"[DISCLAIMER_REQUIRED: MISSING_MANUAL] {query}"
+                else:
+                    logger.info(f"✅ [Provenance] {chunk_count} manual chunks found for {manual_id}.")
+            finally:
+                db.close()
             
             logger.info(f"🔍 [RAG Routing] Machine {machine_id} resolved to Manual: {manual_id} (Mode: {mode})")
             rag_response = rag_gen.generate_response(
@@ -153,6 +166,7 @@ def critic_node(state: CopilotState):
     # HITL: If this is a specific user query, provide a clean chat response.
     # If it's an initial anomaly detection (no user query yet), provide a brief summary.
     user_q = state.get('user_query')
+    image_tags = "\n".join([f"![Image]({img})" for img in state.get('retrieved_images', [])])
     if user_q and user_q.strip():
         final_output = state['strategy_report']
     else:

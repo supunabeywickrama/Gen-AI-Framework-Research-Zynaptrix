@@ -36,7 +36,10 @@ import {
   Cpu,
   TrendingUp,
   Hash,
-  Move
+  Move,
+  Bot,
+  User,
+  History
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
@@ -107,6 +110,7 @@ export default function IndustrialCopilotDashboard() {
   const [isChatMaximized, setIsChatMaximized] = useState(false);
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
   const [operatorFix, setOperatorFix] = useState('');
+  const [activeRegistryTab, setActiveRegistryTab] = useState<'active' | 'archive'>('active');
   const [stepComments, setStepComments] = useState<Record<string, string>>({});
   const [stepChatInputs, setStepChatInputs] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -423,7 +427,7 @@ export default function IndustrialCopilotDashboard() {
              })()}
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden flex-1 flex flex-col">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[600px] flex flex-col">
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-xl font-black flex items-center gap-3 text-white">
                  <Activity className="text-blue-500" /> Real-Time Sensor Stream
@@ -489,14 +493,44 @@ export default function IndustrialCopilotDashboard() {
               </div>
             </h2>
 
+            <div className="mb-6">
+              <div className="flex p-1 bg-slate-800/50 rounded-xl border border-slate-700/50">
+                <button 
+                  onClick={() => setActiveRegistryTab('active')}
+                  className={`flex-1 py-2 px-4 rounded-lg text-xs font-bold transition-all ${
+                    activeRegistryTab === 'active' 
+                    ? 'bg-blue-600 text-white shadow-lg' 
+                    : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Active Alerts
+                </button>
+                <button 
+                  onClick={() => setActiveRegistryTab('archive')}
+                  className={`flex-1 py-2 px-4 rounded-lg text-xs font-bold transition-all ${
+                    activeRegistryTab === 'archive' 
+                    ? 'bg-emerald-600 text-white shadow-lg' 
+                    : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Archive
+                </button>
+              </div>
+            </div>
+
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-800">
-               {anomalyHistory.length === 0 ? (
+               {anomalyHistory
+                .filter(a => a.machine_id === currentMachineId)
+                .filter(a => activeRegistryTab === 'active' ? !a.resolved : a.resolved).length === 0 ? (
                  <div className="h-full flex flex-col items-center justify-center opacity-20 py-20 text-center">
                     <CheckCircle size={40} className="mb-4" />
                     <p className="text-xs font-bold uppercase tracking-widest">No Anomalies Logged</p>
                  </div>
                ) : (
-                 anomalyHistory.map((item) => (
+                 anomalyHistory
+                  .filter(a => a.machine_id === currentMachineId)
+                  .filter(a => activeRegistryTab === 'active' ? !a.resolved : a.resolved)
+                  .map((item) => (
                    <button
                     key={item.id}
                     onClick={() => {
@@ -588,18 +622,19 @@ export default function IndustrialCopilotDashboard() {
                         <p className="text-xs font-bold uppercase tracking-widest">Restoring Context...</p>
                     </div>
                 ) : (
-                    (chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, i) => {
+                    (chatHistory[activeAnomaly?.id.toString() || 'general'] || []).map((msg, index) => {
                         const hasSuggestion = msg.role === 'agent' && msg.content.includes('[SUGGESTION:');
                         const displayContent = msg.content
                             .replace(/\[PROCEDURE_START\][\s\S]*?\[PROCEDURE_END\]/gi, '')
                             .replace(/\[ACTION:\s*(.*?)\]/gi, '')
                             .replace(/\[SUGGESTION:.*?\]/gi, '')
                             .trim();
+                        const isFinalSummary = msg.metadata?.type === 'final_summary';
 
                         // === PHASE HEADER ===
                         if (msg.type === 'phase_header') {
                           return (
-                            <div key={i} className="flex justify-center my-6">
+                            <div key={index} className="flex justify-center my-6">
                               <div className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white px-8 py-4 rounded-2xl border border-slate-600 shadow-xl text-center max-w-lg">
                                 <div className="text-sm font-black leading-relaxed">
                                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
@@ -616,7 +651,7 @@ export default function IndustrialCopilotDashboard() {
                           const isResponded = !!msg.stepResponse;
 
                           return (
-                            <div key={i} className="flex justify-start">
+                            <div key={index} className="flex justify-start">
                               <div className={`max-w-[90%] w-full rounded-3xl shadow-2xl border overflow-hidden transition-all duration-500 ${
                                 isResponded 
                                   ? 'bg-slate-800/50 border-slate-700/50 opacity-70' 
@@ -722,7 +757,7 @@ export default function IndustrialCopilotDashboard() {
                         // === PROCEDURE COMPLETE ===
                         if (msg.type === 'procedure_complete') {
                           return (
-                            <div key={i} className="flex justify-center my-6">
+                            <div key={index} className="flex justify-center my-6">
                               <div className="bg-gradient-to-r from-emerald-900/30 to-emerald-800/20 border border-emerald-500/30 text-white px-10 py-8 rounded-3xl shadow-2xl text-center max-w-lg">
                                 <div className="text-5xl mb-4">🎉</div>
                                 <div className="text-lg font-black mb-2">All Steps Completed!</div>
@@ -735,7 +770,7 @@ export default function IndustrialCopilotDashboard() {
                         // === USER MESSAGE ===
                         if (msg.role === 'user') {
                           return (
-                            <div key={i} className="flex justify-end">
+                            <div key={index} className="flex justify-end">
                               <div className="max-w-[75%] bg-blue-600 text-white rounded-3xl rounded-br-none p-5 shadow-xl">
                                 <p className="text-sm leading-relaxed whitespace-pre-line">{msg.content}</p>
                               </div>
@@ -745,14 +780,19 @@ export default function IndustrialCopilotDashboard() {
 
                         // === AGENT TEXT (summary / regular / clarification) ===
                         return (
-                          <div key={i} className="flex justify-start">
-                            <div className={`max-w-[85%] rounded-3xl rounded-tl-none p-6 shadow-2xl ${
-                                msg.type === 'step_clarification' 
-                                    ? 'bg-blue-900/20 border border-blue-500/30' 
-                                    : msg.type === 'branching_advice'
-                                        ? 'bg-amber-900/20 border border-amber-500/30'
-                                        : 'bg-slate-800 text-slate-100 border border-slate-700'
+                          <div 
+                            key={index} 
+                            className="flex justify-start group"
+                          >
+                            <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm transition-all duration-300 ${
+                               isFinalSummary
+                                ? 'bg-gradient-to-br from-emerald-950/40 to-slate-900 border-2 border-emerald-500/50 text-emerald-50 w-full'
+                                : 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700/50'
                             }`}>
+                              <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase tracking-widest font-bold">
+                                {isFinalSummary ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Bot className="w-3 h-3" />}
+                                {isFinalSummary ? 'Completion Report' : 'AI Mentor'}
+                              </div>
                               {msg.type === 'step_clarification' && (
                                 <div className="flex items-center gap-2 mb-4 text-blue-400 text-[10px] font-black uppercase tracking-widest">
                                     <ShieldCheck size={14} /> AI Tutorial Detail

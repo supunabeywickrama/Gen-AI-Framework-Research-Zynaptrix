@@ -17,27 +17,29 @@ class RAGMode(Enum):
 class RAGGenerator:
     """
     The core Multimodal Retrieval-Augmented Generation (RAG) engine.
-    Operates in four strict modes:
-      MODE 1 (SUMMARY): Short diagnostic summary only. No steps, no lists.
-      MODE 2 (PROCEDURE): Structured JSON procedure only. No markdown.
-      MODE 3 (CLARIFICATION): Detailed, non-technical drill-down for a specific maintenance step.
-      MODE 4 (EVALUATION): Evaluates technician feedback against manual requirements.
+    Now supports universal provenance checking and simple-English pointwise clarifications.
     """
     def __init__(self):
         self.retriever = RetrievalEngine()
         
     def generate_response(self, query: str, manual_id: str, machine_id: str, mode: RAGMode = RAGMode.SUMMARY, chat_history: str = "") -> dict:
         """
-        Executes the Multimodal RAG Pipeline with strict mode enforcement.
-        Now supports passing the active chat history for 'Conversational Wizard' mode.
+        Executes the Multimodal RAG Pipeline with strict mode enforcement and provenance checks.
         """
         db = None
         retrieved_data = {"text_chunks": [], "images": [], "historical_fixes": []}
         
+        # PROVENANCE PRE-CHECK
+        manual_missing = "[DISCLAIMER_REQUIRED: MISSING_MANUAL]" in query
+        if manual_missing:
+            # Strip the flag from the query before search to prevent vector pollution
+            query = query.replace("[DISCLAIMER_REQUIRED: MISSING_MANUAL]", "").strip()
+
         try:
             # STAGE 1: SEMANTIC RETRIEVAL (Fault Tolerant)
             try:
                 db = SessionLocal()
+                # Use the CLEAN query for search
                 retrieved_data = self.retriever.retrieve(db, query, manual_id, machine_id)
             except Exception as e:
                 print(f"RAG_DB_ERROR: {e}. Falling back to manual-only context.")
@@ -62,11 +64,11 @@ class RAGGenerator:
                 if img.path: image_references.append(img.path)
                 text_context += f"--- Image Description {i+1} (Page {img.page}) ---\n{img.content}\n\n"
                 
-            # STAGE 3: MODE SELECTION
+            # STAGE 3: MODE SELECTION (Prompt Construction)
             if mode == RAGMode.PROCEDURE:
                 system_prompt = self._build_procedure_prompt(manual_id, text_context, history_context, image_references)
             elif mode == RAGMode.CLARIFICATION:
-                system_prompt = self._build_clarification_prompt(manual_id, query, text_context, image_references)
+                system_prompt = self._build_clarification_prompt(manual_id, query, text_context, image_references, manual_missing)
             elif mode == RAGMode.EVALUATION:
                 system_prompt = self._build_evaluation_prompt(manual_id, query, text_context, image_references)
             elif mode == RAGMode.CONVERSATIONAL_WIZARD:
@@ -74,15 +76,23 @@ class RAGGenerator:
                     manual_id, 
                     query, 
                     text_context, 
+                    history_context,
                     image_references,
-                    chat_history
+                    chat_history,
+                    manual_missing
                 )
             else:
-                system_prompt = self._build_summary_prompt(manual_id, text_context, history_context)
+                system_prompt = self._build_summary_prompt(manual_id, text_context, history_context, manual_missing)
             
             # STAGE 4: LLM INFERENCE
             try:
-                user_content = f"Technician query: '{query}'"
+                # Differentiate user directive by mode for better steerability
+                if mode == RAGMode.CLARIFICATION:
+                    user_content = f"Please explain the following task in very simple, pointwise English using bullet points: '{query}'"
+                elif mode == RAGMode.EVALUATION:
+                    user_content = f"Please evaluate the technician's progress: '{query}'"
+                else:
+                    user_content = f"Technician query: '{query}'"
                 
                 response = openai.chat.completions.create(
                     model="gpt-4o",
@@ -107,13 +117,19 @@ class RAGGenerator:
             print(f"RAG formulation failed: {e}")
             raise e
 
-    def _build_summary_prompt(self, manual_id: str, text_context: str, history_context: str) -> str:
-        """
-        MODE 1: Summary-only prompt. The LLM must produce a SHORT diagnostic overview.
-        Absolutely NO procedures, NO numbered steps, NO bullet-point instructions.
-        """
+    def _get_disclaimer(self) -> str:
+        return (
+            "CRITICAL: I do not have the specific technical manual for this machine in my database. "
+            "YOU MUST START YOUR RESPONSE WITH THIS EXACT DISCLAIMER: "
+            "'⚠️ Documentation Alert: I do not have the specific technical manual for this machine in my database. "
+            "The following steps are based on general industrial best practices. Please consult local site safety protocols before proceeding.'\n\n"
+        )
+
+    def _build_summary_prompt(self, manual_id: str, text_context: str, history_context: str, missing_manual: bool = False) -> str:
+        disclaimer = self._get_disclaimer() if missing_manual else ""
         return (
             f"You are an Industrial Diagnostic AI for: {manual_id}.\n\n"
+            f"{disclaimer}"
             "YOUR TASK: Provide a SHORT diagnostic summary (3-5 sentences maximum).\n\n"
             "ABSOLUTE RULES:\n"
             "1. DO NOT provide ANY maintenance steps, repair instructions, or numbered procedures.\n"
@@ -124,26 +140,12 @@ class RAGGenerator:
             "6. Keep your response under 5 sentences.\n"
             "7. You MUST end your response with EXACTLY this tag on its own line to trigger the repair wizard:\n"
             "   [SUGGESTION: Generate full step-by-step repair procedure]\n\n"
-            "EXAMPLE OF A CORRECT RESPONSE:\n"
-            "---\n"
-            "Based on the sensor readings, the elevated temperature (176°C) combined with abnormal vibration patterns (0.82g) "
-            "strongly suggests bearing degradation in the primary drive assembly. The motor current deviation of 5.1A indicates "
-            "increased mechanical resistance, likely due to seal wear or lubrication breakdown. Immediate inspection is recommended "
-            "before the fault progresses to a critical failure.\n\n"
-            "[SUGGESTION: Generate full step-by-step repair procedure]\n"
-            "---\n\n"
             f"MANUAL CONTEXT:\n{text_context}\n\n"
             f"HISTORICAL REPAIRS:\n{history_context}"
         )
     
     def _build_procedure_prompt(self, manual_id: str, text_context: str, history_context: str, image_references: list) -> str:
-        """
-        MODE 2: Structured JSON procedure prompt.
-        The LLM must output ONLY the JSON wrapped in [PROCEDURE_START] and [PROCEDURE_END].
-        No markdown, no explanatory text.
-        """
         image_tags = "\n".join([f"  - [IMAGE_{i}] for image reference {i}" for i in range(len(image_references))])
-        
         return (
             f"You are an Industrial Maintenance Procedure Generator for: {manual_id}.\n\n"
             "YOUR TASK: Generate a COMPLETE structured repair procedure in JSON format.\n\n"
@@ -151,114 +153,72 @@ class RAGGenerator:
             "1. Output ONLY the JSON wrapped between [PROCEDURE_START] and [PROCEDURE_END] tags.\n"
             "2. Do NOT write any text before or after the JSON block. No introductions. No summaries.\n"
             "3. The FIRST phase MUST be type 'safety' with lockout/tagout and PPE steps.\n"
-            "4. Each task must have a unique 'id' (e.g. 's1', 's2', 't1', 't2', etc.).\n"
-            "5. Mark safety/critical tasks with '\"critical\": true'.\n"
-            "6. Include image references like [IMAGE_0], [IMAGE_1] in task text where relevant.\n"
-            "7. Break down complex procedures into multiple subphases.\n"
-            "8. Every single step from the manual should be included - be thorough.\n\n"
+            "4. Mark safety/critical tasks with '\"critical\": true'.\n"
+            "5. Include image references like [IMAGE_0], [IMAGE_1] in task text where relevant.\n\n"
             f"AVAILABLE IMAGE TAGS:\n{image_tags}\n\n"
-            "EXACT OUTPUT FORMAT (nothing else):\n"
+            "EXACT OUTPUT FORMAT:\n"
             "[PROCEDURE_START]\n"
-            '{"phases": [\n'
-            '  {\n'
-            '    "id": "safety_01",\n'
-            '    "title": "⚠️ Safety & Lockout Protocols",\n'
-            '    "type": "safety",\n'
-            '    "subphases": [\n'
-            '      {\n'
-            '        "title": "Pre-Work Safety",\n'
-            '        "tasks": [\n'
-            '          {"id": "s1", "text": "Ensure machine is powered OFF and locked out per LOTO procedure", "critical": true},\n'
-            '          {"id": "s2", "text": "Don required PPE: safety glasses, gloves, hearing protection", "critical": true}\n'
-            '        ]\n'
-            '      }\n'
-            '    ]\n'
-            '  },\n'
-            '  {\n'
-            '    "id": "maint_01",\n'
-            '    "title": "🔧 Inspection & Repair",\n'
-            '    "type": "maintenance",\n'
-            '    "subphases": [\n'
-            '      {\n'
-            '        "title": "Visual Inspection",\n'
-            '        "tasks": [\n'
-            '          {"id": "t1", "text": "Inspect component for wear [IMAGE_0]", "critical": false}\n'
-            '        ]\n'
-            '      }\n'
-            '    ]\n'
-            '  }\n'
-            ']}\n'
+            '{"phases": [...]}\n'
             "[PROCEDURE_END]\n\n"
             f"MANUAL CONTEXT:\n{text_context}\n\n"
             f"HISTORICAL REPAIRS:\n{history_context}"
         )
 
-    def _build_clarification_prompt(self, manual_id: str, step_text: str, text_context: str, image_references: list) -> str:
+    def _build_clarification_prompt(self, manual_id: str, step_text: str, text_context: str, image_references: list, missing_manual: bool = False) -> str:
         """
-        MODE 3: Step Clarification Prompt.
+        MODE 3: Step Clarification Prompt optimized for simple pointwise English and images.
         """
         image_tags = "\n".join([f"  - [IMAGE_{i}] for image reference {i}" for i in range(len(image_references))])
+        disclaimer = self._get_disclaimer() if missing_manual else ""
         
         return (
             f"You are a Technical Mentor for: {manual_id}.\n\n"
-            f"YOUR TASK: Provide a detailed, easy-to-understand explanation for the maintenance task described below.\n"
-            f"If the input looks like a troubleshooting advice, focus on explaining the ORIGINAL task context found in the manual.\n\n"
-            f"TASK TO EXPLAIN: '{step_text}'\n\n"
-            "CONTEXT RULES:\n"
-            "1. Explain the task to someone with NO technical background. Avoid jargon.\n"
-            "2. Use bullet points for sub-tasks if necessary.\n"
-            "3. Reference technical diagrams using the available image tags if they help illustrate THIS specific task.\n"
-            "4. Include safety warnings if the task is dangerous.\n"
-            "5. Explain WHAT to do, why it matters (WHY), and HOW to do it correctly. Keep your explanation to 2-3 detailed, warm sentences.\n"
-            "6. Your response should be encouraging and supportive.\n\n"
+            f"{disclaimer}"
+            f"YOUR TASK: Provide a detailed, very simple, and clear explanation for the following maintenance task: '{step_text}'\n\n"
+            "STRICT FORMATTING RULES:\n"
+            "1. YOUR RESPONSE MUST BE A LIST OF BULLET POINTS. \n"
+            "2. ABSOLUTELY NO PARAGRAPHS. DO NOT combine your steps into a block of text.\n"
+            "3. DO NOT include introductory filler (e.g., 'Let's break this down' or 'I can help with that'). Jump straight to the bullet points.\n"
+            "4. Use SIMPLE ENGLISH (ELI5). No jargon. \n"
+            "5. IMAGE INCLUSION: You MUST include relevant [IMAGE_N] tags within your bullet points to show where specific diagrams apply.\n"
+            "6. For each sub-point, explain: What to do, Why it matters, and How to do it correctly.\n\n"
             f"AVAILABLE IMAGE TAGS:\n{image_tags}\n\n"
-            f"MANUAL CONTEXT TO USE AS SOURCE OF TRUTH:\n{text_context}"
-        )
-
-    def _build_evaluation_prompt(self, manual_id: str, user_feedback: str, text_context: str, image_references: list) -> str:
-        """
-        MODE 4: Step Evaluation Prompt.
-        Determines if a user's feedback indicates task completion or failure.
-        """
-        return (
-            f"You are a Quality Assurance Supervisor for: {manual_id}.\n\n"
-            f"A technician has provided the following feedback on their progress:\n"
-            f"'{user_feedback}'\n\n"
-            "YOUR JOB:\n"
-            "1. Evaluate if the technician has successfully completed the task described in the manual context.\n"
-            "2. If they have completed it, start your response with '[STEP_COMPLETE]'. Provide a short confirmation message.\n"
-            "3. If they are having trouble, or their comment suggests a failure, start your response with '[STEP_NEED_HELP]'. Provide a helpful troubleshooting tip based ONLY on the manual context.\n"
-            "4. Be concise and professional.\n\n"
             f"MANUAL SOURCE OF TRUTH:\n{text_context}"
         )
 
-    def _build_conversational_wizard_prompt(self, manual_id: str, user_query: str, text_context: str, image_references: list, history: str) -> str:
+    def _build_evaluation_prompt(self, manual_id: str, user_feedback: str, text_context: str, image_references: list) -> str:
+        return (
+            f"You are a Quality Assurance Supervisor for: {manual_id}.\n\n"
+            f"Technician feedback: '{user_feedback}'\n"
+            "YOUR JOB: Evaluate if the task is complete. Start with [STEP_COMPLETE] or [STEP_NEED_HELP] based on their tone and evidence.\n\n"
+            f"MANUAL SOURCE OF TRUTH:\n{text_context}"
+        )
+
+    def _build_conversational_wizard_prompt(self, manual_id: str, user_query: str, text_context: str, history_context: str, image_references: list, history: str, missing_manual: bool = False) -> str:
         """
         MODE 5: Conversational Wizard Prompt.
-        The core "Brain" of the intelligent maintenance flow.
         """
         image_tags = "\n".join([f"  - [IMAGE_{i}] for image reference {i}" for i in range(len(image_references))])
-        
+        disclaimer = self._get_disclaimer() if missing_manual else ""
+
         return (
             f"You are an Intelligent Maintenance Mentor for: {manual_id}.\n\n"
+            f"{disclaimer}"
             "YOUR OBJECTIVE:\n"
-            "Guide the operator through the repair process conversationally. Instead of a rigid list, you own the flow.\n\n"
+            "Guide the operator through the repair process conversationally.\n\n"
             "CURRENT CONTEXT:\n"
-            f"1. CHAT HISTORY (Full record of actions and instructions so far):\n{history}\n"
-            f"2. OPERATOR'S RECENT INPUT: '{user_query}'\n"
-            f"3. MANUAL SOURCE OF TRUTH (Procedures and diagrams):\n{text_context}\n\n"
+            f"1. CHAT HISTORY:\n{history}\n"
+            f"2. OPERATOR INPUT: '{user_query}'\n"
+            f"3. MANUAL SOURCE OF TRUTH:\n{text_context}\n"
+            f"4. PAST INTERACTIONS / HISTORICAL KNOWLEDGE:\n{history_context}\n\n"
             "YOUR MISSION CRITICAL TASK:\n"
-            "1. READ THE HISTORY FIRST: Scan the memory to see exactly what has happened. If the history is empty, start from the beginning (Safety).\n"
-            "2. PHASE DETECTION:\n"
-            "   - If history doesn't show a completed '[PHASE: Safety & Lockout]', you MUST start there. This is non-negotiable.\n"
-            "   - If Safety is done, look for the current Repair phase in the manual context and history to determine the exact next instruction.\n"
-            "3. ADAPT TO OPERATOR INTENT:\n"
-            "   - IF input contains 'NEED_HELP' or they seem stuck: DO NOT ADVANCE. Provide a detailed 'How-To' or an alternative way from the manual context to help them overcome the hurdle.\n"
-            "   - IF input contains 'NEED_DETAIL': Provide a non-technical breakdown of the CURRENT step. Explain 'What', 'Why', and 'How' with warm English.\n"
-            "   - IF input contains 'CONFIRM_DONE' or they say they are finished: You MUST find the NEXT logical instruction in the 'MANUAL SOURCE OF TRUTH' and provide it immediately. Do NOT ask 'what's next' - YOU are the guide. Provide the step details.\n"
-            "4. RESPONSE STYLE: 2-3 detailed sentences. Be warm, supportive, and clear. Maintain continuity - if they just finished 'Step A', your response MUST be 'Step B'.\n\n"
-            "OUTPUT FORMAT:\n"
-            "- Start with '[PHASE: <Name>]' (e.g. Safety & Lockout, Disassembly, Component Repair).\n"
-            "- If the entire procedure is finished (after the final verification step), output '[PROCEDURE_FINISH]' at the very end.\n\n"
+            "1. READ HISTORY: Determine if we are in Safety (start here!) or Repair phase.\n"
+            "2. ADAPT: If they completed a step, provide the EXACT next step from the manual. Do not ask them what to do.\n"
+            "3. FIELD WISDOM: If 'PAST INTERACTIONS' shows a successful previous fix for a similar issue on this machine, MENTION IT. If the operator notes from history contradict the manual (e.g. 'the manual says 50Nm but 55Nm worked better'), prioritize the verified operator fix.\n"
+            "4. RESPONSE STYLE: 2-3 detailed, warm sentences. Be clear and supportive.\n\n"
+            "OUTPUT FORMAT: Start with '[PHASE: <Name>]'.\n\n"
+            "SAFETY MANDATE:\n"
+            "- IF CHAT HISTORY IS EMPTY: You MUST exclusively provide Safety and Preparation steps (PPE, LOTO, etc.) as the very first instruction. DO NOT skip to the actual repair task.\n"
+            "- The initial phase name MUST be 'Safety & Preparation'.\n\n"
             f"AVAILABLE IMAGES:\n{image_tags}"
         )

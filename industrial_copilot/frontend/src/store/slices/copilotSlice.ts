@@ -77,6 +77,8 @@ export interface ChatMessage {
   type?: 'text' | 'step' | 'phase_header' | 'procedure_complete' | 'step_clarification' | 'branching_advice' | 'wizard_step';
   stepData?: StepData;
   stepResponse?: StepResponse;
+  isDocAlert?: boolean; // New flag for documentation-gap warnings
+  metadata?: any;
 }
 
 export interface AnomalyRecord {
@@ -178,7 +180,7 @@ export const fetchChatHistory = createAsyncThunk(
 export const resolveAnomaly = createAsyncThunk(
   'copilot/resolve',
   async (payload: { anomalyId: number; operator_fix: string }) => {
-    const response = await fetch(`${API_BASE}/api/copilot/chat/${payload.anomalyId}/resolve`, {
+    const response = await fetch(`${API_BASE}/api/chat-history/${payload.anomalyId}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ operator_fix: payload.operator_fix }),
@@ -709,6 +711,7 @@ const copilotSlice = createSlice({
         machineId: action.meta.arg.machine_id,
         dbId: action.payload.db_id,
         hasSuggestion: /\[SUGGESTION:[\s\S]*?Generate full step-by-step repair procedure[\s\S]*?\]/i.test(content),
+        isDocAlert: content.includes('⚠️ Documentation Alert'),
         // Identify as a wizard step to enable action buttons
         type: (content.includes('[CONVERSATIONAL_WIZARD]') || action.meta.arg.query.includes('[CONVERSATIONAL_WIZARD]')) ? 'wizard_step' : 'text',
         stepData: {
@@ -761,7 +764,8 @@ const copilotSlice = createSlice({
             role: 'agent',
             content: finalContent.replace(/\[PHASE:.*?\]/gi, '').trim(),
             type: 'wizard_step',
-            images: data.graph_result.retrieved_images,
+            isDocAlert: content.includes('⚠️ Documentation Alert'),
+            images: data.graph_result.retrieved_images || [],
             stepData: {
               stepId,
               stepText: stepText || '',
@@ -806,7 +810,8 @@ const copilotSlice = createSlice({
             role: 'agent',
             content: finalContent.replace(/\[PROCEDURE_FINISH\]/g, '🏁'),
             type: finalContent.includes('[PROCEDURE_FINISH]') ? 'procedure_complete' : 'wizard_step',
-            images: data.graph_result.retrieved_images,
+            isDocAlert: content.includes('⚠️ Documentation Alert'),
+            images: data.graph_result.retrieved_images || [],
             stepData: {
               stepId,
               stepText: finalContent.replace(/\[PROCEDURE_FINISH\]/g, '🏁').trim(),
