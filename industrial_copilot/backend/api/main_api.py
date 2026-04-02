@@ -100,49 +100,83 @@ def invoke_copilot(event: AnomalyEvent):
     """Synchronous entry point to avoid blocking event loop during heavy RAG."""
     with open("api_debug.log", "a") as f:
         f.write(f"\n--- INQUIRY START: Anomaly #{event.anomaly_id} ---\n")
+        # 🧠 PHASE 2: Context Hydration (Fetch PREVIOUS history before adding CURRENT message)
+        chat_context = ""
+        try:
+            db_history = SessionLocal()
+            try:
+                # Calculate anomaly lookup ID
+                look_id = int(event.anomaly_id) if event.anomaly_id else None
+                
+                past_messages = db_history.query(ChatMessage).filter(
+                    ChatMessage.anomaly_id == look_id
+                ).order_by(ChatMessage.id).all()
+                
+                for m in past_messages:
+                    chat_context += f"{m.role.upper()}: {m.content}\n"
+                
+                f.write(f"CONTEXT: Hydrated {len(past_messages)} previous messages for incident {look_id}.\n")
+            except Exception as e:
+                f.write(f"HISTORY_WARNING: DB offline, providing zero-shot context only: {e}\n")
+            finally:
+                db_history.close()
+        except:
+            pass
+
+        # 📝 PHASE 3: Persistent User Message (Store CURRENT after history fetch)
+        actual_id = None
+        try:
+            db_user = SessionLocal()
+            try:
+                # Try to map to integer for DB lookup if possible
+                look_id = int(event.anomaly_id) if event.anomaly_id else None
+                anomaly_record = db_user.query(AnomalyRecord).filter(AnomalyRecord.id == look_id).first()
+                if anomaly_record:
+                    actual_id = anomaly_record.id
+                
+                if event.user_query:
+                    # Save user message with optional action metadata if it was a button click
+                    metadata = None
+                    if "[CONVERSATIONAL_WIZARD]" in event.user_query:
+                        # Extract intent if it was passed in parentheses (Context: ...)
+                        intent_match = event.user_query.split("(Context: ")
+                        if len(intent_match) > 1:
+                            intent_label = intent_match[1].replace(")", "")
+                            metadata = {"action": "step_response", "status": "done" if "CONFIRM_DONE" in intent_label else "cant_do"}
+                    
+                    msg = ChatMessage(
+                        anomaly_id=actual_id,
+                        role='user',
+                        content=event.user_query,
+                        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        message_metadata=json.dumps(metadata) if metadata else None
+                    )
+                    db_user.add(msg)
+                    db_user.commit()
+            except Exception as e:
+                f.write(f"DB_WARNING[USER_PHASE]: Connection failed: {e}\n")
+            finally:
+                db_user.close()
+        except Exception as e:
+            f.write(f"DB_CRITICAL[INIT]: SessionLocal failed: {e}\n")
 
         initial_state = {
-            "event_id": f"EVT-{event.anomaly_id}" if event.anomaly_id else "EVT-LIVE-QUERY",
+            "event_id": f"EVT-{actual_id}" if actual_id else "EVT-LIVE-QUERY",
             "machine_id": event.machine_id,
             "machine_state": event.machine_state,
             "anomaly_score": event.anomaly_score or 0.0,
             "user_query": event.user_query,
-            "suspect_sensor": event.suspect_sensor,
-            "recent_readings": event.recent_readings or {},
+            "chat_history": chat_context,
+            "sensor_status_report": "",
+            "diagnostic_report": "",
+            "rag_context": "",
+            "retrieved_images": [],
+            "strategy_report": "",
+            "critic_feedback": "",
+            "final_execution_plan": ""
         }
 
-        # Phase 1: Persist user message
-        actual_id = None
-        db_user = SessionLocal()
-        try:
-            if event.anomaly_id:
-                try:
-                    look_id = int(event.anomaly_id)
-                    exists = db_user.query(AnomalyRecord).filter(AnomalyRecord.id == look_id).first()
-                    if exists:
-                        actual_id = look_id
-                        f.write(f"VERIFIED: Anomaly #{actual_id} found in DB.\n")
-                    else:
-                        f.write(f"WARNING: Anomaly #{look_id} NOT in DB.\n")
-                except Exception as e:
-                    f.write(f"ID_CAST_ERROR: {e}\n")
-
-            if event.user_query:
-                msg = ChatMessage(
-                    anomaly_id=actual_id,
-                    role='user',
-                    content=event.user_query,
-                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                )
-                db_user.add(msg)
-                db_user.commit()
-                f.write(f"SUCCESS: User message stored for ID {actual_id}.\n")
-        except Exception as e:
-            f.write(f"DB_ERROR[USER_PHASE]: {e}\n")
-        finally:
-            db_user.close()
-
-        # Phase 2: Agent Orchestration
+        # 🚀 PHASE 3: Agent Orchestration
         try:
             result = copilot_workflow.invoke(initial_state)
             f.write("SUCCESS: Graph execution completed.\n")
@@ -150,27 +184,80 @@ def invoke_copilot(event: AnomalyEvent):
             f.write(f"GRAPH_ERROR: {e}\n")
             return {"status": "error", "message": f"Orchestration failure: {str(e)}"}
 
-        # Phase 3: Persist agent response
+        # 🛡️ PHASE 4: Persistent Agent Response
         final_answer = result.get("final_execution_plan", "")
         if final_answer:
-            db_agent = SessionLocal()
             try:
-                msg = ChatMessage(
-                    anomaly_id=actual_id,
-                    role='agent',
-                    content=final_answer,
-                    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    images=json.dumps(result.get("retrieved_images", []))
-                )
-                db_agent.add(msg)
-                db_agent.commit()
-                f.write(f"SUCCESS: Agent response stored for ID {actual_id}.\n")
-            except Exception as e:
-                f.write(f"DB_ERROR[AGENT_PHASE]: {e}\n")
-            finally:
-                db_agent.close()
+                db_agent = SessionLocal()
+                try:
+                    msg = ChatMessage(
+                        anomaly_id=actual_id,
+                        role='agent',
+                        content=final_answer,
+                        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        images=json.dumps(result.get("retrieved_images", []))
+                    )
+                    db_agent.add(msg)
+                    db_agent.commit()
+                    f.write(f"SUCCESS: Agent response stored for ID {actual_id}.\n")
+                except Exception as e:
+                    f.write(f"DB_WARNING[AGENT_PHASE]: Storage failed: {e}\n")
+                finally:
+                    db_agent.close()
+            except:
+                pass
 
         return {"status": "success", "graph_result": result, "stored_id": actual_id}
+
+
+class IntentRequest(BaseModel):
+    user_message: str
+    step_text: str  # The current repair step text for context
+    machine_id: str = "PUMP-001"
+
+@app.post("/api/copilot/classify-intent")
+async def classify_intent(req: IntentRequest):
+    """
+    Fast intent classification using gpt-4o-mini.
+    Determines what a user is trying to communicate in the context of a repair step.
+    Returns one of: CONFIRM_DONE | NEED_HELP | NEED_DETAIL | FREE_CHAT
+    """
+    import openai
+    from unified_rag.config import settings
+    openai.api_key = settings.openai_api_key
+
+    system_prompt = (
+        "You are an intent classifier for an industrial maintenance assistant. "
+        "A technician is working on a repair procedure. "
+        "Based on their message and the current step context, classify their intent into EXACTLY ONE of these categories:\n\n"
+        "CONFIRM_DONE - They are saying they completed the step (e.g. 'done', 'finished', 'I tightened the bolt', 'all good', 'checked it')\n"
+        "NEED_HELP - They are stuck, have a problem, or something went wrong (e.g. 'can't find', 'broken', 'seized', 'wrong', 'error', 'doesn't work', 'stuck')\n"
+        "NEED_DETAIL - They want to understand how to do something (e.g. 'how', 'what is', 'explain', 'show me', 'I don't understand', 'what does X mean')\n"
+        "FREE_CHAT - A general question not directly about completing this step (e.g. 'what's the temperature limit', 'how old is this machine')\n\n"
+        "Reply with ONLY one of these four words: CONFIRM_DONE, NEED_HELP, NEED_DETAIL, or FREE_CHAT."
+    )
+    user_prompt = f"Current repair step: \"{req.step_text}\"\n\nTechnician message: \"{req.user_message}\""
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=10,
+            temperature=0.0  # Deterministic classification
+        )
+        intent = response.choices[0].message.content.strip().upper()
+        # Validate
+        valid = {"CONFIRM_DONE", "NEED_HELP", "NEED_DETAIL", "FREE_CHAT"}
+        if intent not in valid:
+            intent = "FREE_CHAT"
+    except Exception as e:
+        logging.error(f"Intent classification failed: {e}")
+        intent = "FREE_CHAT"
+
+    return {"intent": intent}
 
 
 @app.websocket("/ws/telemetry")
@@ -295,6 +382,13 @@ async def stop_simulator(machine_id: str = "PUMP-001"):
         return {"status": "stopped", "machine_id": machine_id}
     return {"status": "not_running", "machine_id": machine_id}
 
+@app.post("/api/simulator/inject")
+async def inject_simulator(machine_id: str = "PUMP-001", anomaly_type: str = "machine_fault"):
+    state_file = f"simulator_{machine_id}_override.state"
+    with open(state_file, "w") as f:
+         f.write(anomaly_type)
+    logging.info(f"💉 Injecting forced {anomaly_type} for {machine_id}")
+    return {"status": "injected", "machine_id": machine_id, "anomaly_type": anomaly_type}
 
 @app.get("/api/simulator/status")
 async def get_simulator_status():
