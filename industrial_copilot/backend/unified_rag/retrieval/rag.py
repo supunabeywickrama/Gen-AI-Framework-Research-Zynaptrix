@@ -239,8 +239,19 @@ class RAGGenerator:
         """
         image_tags = "\n".join([f"  - [IMAGE_{i}] for image reference {i}" for i in range(len(image_references))])
         
+        # PROVENANCE DISKLAIMER LOGIC
+        disclaimer_instr = ""
+        if "[DISCLAIMER_REQUIRED: MISSING_MANUAL]" in user_query:
+            disclaimer_instr = (
+                "CRITICAL: I do not have the specific technical manual for this machine in my database. "
+                "YOU MUST START YOUR RESPONSE WITH THIS EXACT DISCLAIMER: "
+                "'⚠️ Documentation Alert: I do not have the specific technical manual for this machine in my database. "
+                "The following steps are based on general industrial best practices. Please consult local site safety protocols before proceeding.'\n\n"
+            )
+
         return (
             f"You are an Intelligent Maintenance Mentor for: {manual_id}.\n\n"
+            f"{disclaimer_instr}"
             "YOUR OBJECTIVE:\n"
             "Guide the operator through the repair process conversationally. Instead of a rigid list, you own the flow.\n\n"
             "CURRENT CONTEXT:\n"
