@@ -2,94 +2,104 @@ from unified_rag.ingestion.parser import DocumentParser
 from unified_rag.ingestion.chunker import ContextualChunker
 from unified_rag.embeddings.embedder import embedder
 from unified_rag.ingestion.captioner import ImageCaptioner
+from services.table_transformer import TableTransformer
 from unified_rag.db.database import SessionLocal
 from unified_rag.db.models import ManualChunk
+import asyncio
 import time
 
-def process_manual(file_path: str, manual_id: str):
+async def process_manual_async(file_path: str, manual_id: str):
     """
-    End-to-End ingestion pipeline workflow (v2 with Vision LLM Captioning).
+    Ingestion Pipeline v2: Structural Parsing -> Concurrent Enrichment -> Parallel Embedding.
     """
-    print(f"🛠️ [Pipeline] Initializing ingestion components for {manual_id}...")
+    print(f"🏗️ [Pipeline v2] Starting high-precision ingestion for {manual_id}...")
     parser = DocumentParser()
-    chunker = ContextualChunker(chunk_size=500, overlap=100)
+    chunker = ContextualChunker()
     captioner = ImageCaptioner()
+    tabler = TableTransformer()
     
-    # 1. Parse manual (PDF -> Images, Text, Tables)
-    print(f"🔍 [Pipeline] Stage 1/4: Parsing PDF {file_path}...")
+    # 1. Structural Parsing (includes YOLOv8 + Figure Splitting)
+    print(f"🔍 [Pipeline] Stage 1/4: Multi-modal Structural Parsing...")
     parsed_data = parser.parse_pdf(file_path, manual_id)
-    print(f"✅ [Pipeline] Parsing complete. Found {len(parsed_data)} primitive items.")
     
-    # 2. Enrich: Generate Vision Descriptions for Images
-    image_count = sum(1 for item in parsed_data if item["type"] == "image")
-    print(f"🖼️ [Pipeline] Stage 2/4: Generating captions for {image_count} images...")
-    
-    for i, item in enumerate(parsed_data):
-        if item["type"] == "image":
-            print(f"   ∟ Processing image {i+1}/{len(parsed_data)} at page {item['page']}...")
-            desc = captioner.generate_caption(item["path"])
-            item["content"] = f"[IMAGE REFERENCE: {item['path']}]\n[VISUAL DESCRIPTION]: {desc}"
-    
-    # 3. Chunk data (Contextual chunking)
-    print(f"✂️ [Pipeline] Stage 3/4: Creating contextual chunks...")
+    # 2. Adaptive Chunking
+    print(f"✂️ [Pipeline] Stage 2/4: Semantic recursive chunking...")
     chunks = chunker.chunk_data(parsed_data, manual_id)
-    print(f"✅ [Pipeline] Created {len(chunks)} searchable chunks.")
+    print(f"✅ [Pipeline] Created {len(chunks)} structural chunks.")
     
-    # 4. Embed and store to Unified Vector DB
-    print(f"🧠 [Pipeline] Stage 4/4: Embedding and storing to database...")
+    # 3. Concurrent Enrichment (LLM-based)
+    print(f"🧠 [Pipeline] Stage 3/4: Concurrent LLM Enrichment (Captions + Tables)...")
     
-    batch_size = 20  # Reduced from 50 to prevent connection timeouts with large payloads
-    max_retries = 3  # Retry logic for transient database issues
-    for i in range(0, len(chunks), batch_size):
-        batch = chunks[i:i + batch_size]
-        print(f"   ∟ Processing batch {i//batch_size + 1}/{(len(chunks)-1)//batch_size + 1} ({len(batch)} chunks)...")
-        
-        # A. Embed the batch (This takes time, no DB connection open yet)
-        batch_to_save = []
-        for j, chunk in enumerate(batch):
-            if j % 10 == 0:
-                print(f"      ∟ Embedding {j+1}/{len(batch)}...")
-            
-            try:
-                emb = embedder.embed_text(chunk["content"])
-                batch_to_save.append((chunk, emb))
-            except Exception as e:
-                print(f"      ⚠️ Embedding failed for a chunk: {e}. Skipping this chunk.")
-                continue
-        
-        # B. Save the batch (Open DB connection only for the actual save)
-        if not batch_to_save:
-            continue
-            
-        retry_count = 0
-        while retry_count < max_retries:
-            db = SessionLocal()
-            try:
-                for chunk, emb in batch_to_save:
-                    db_chunk = ManualChunk(
-                        manual_id=chunk["manual_id"],
-                        type=chunk["type"],
-                        content=chunk["content"],
-                        path=chunk.get("path"), 
-                        embedding=emb,
-                        page=chunk["page"]
-                    )
-                    db.add(db_chunk)
-                
-                db.commit()
-                print(f"   💾 [Pipeline] Batch {i//batch_size + 1} saved successfully.")
-                break # Success
-            except Exception as e:
-                db.rollback()
-                retry_count += 1
-                if retry_count < max_retries:
-                    wait_time = 2 ** retry_count
-                    print(f"   ⚠️ [Pipeline] Error saving batch {i//batch_size + 1} (Attempt {retry_count}/{max_retries}): {e}. Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    print(f"   🔥 [Pipeline] Fatal error saving batch {i//batch_size + 1} after {max_retries} attempts: {e}")
-            finally:
-                db.close()
+    async def enrich_chunk(chunk):
+        if chunk["type"] == "image":
+            # Pass full metadata for context-aware prompting
+            chunk["content"] = await asyncio.to_thread(
+                captioner.generate_caption, chunk["path"], chunk.get("metadata")
+            )
+        elif chunk["type"] == "table":
+            # Pass section context for table summarization
+            ctx = chunk.get("metadata", {}).get("section", "Technical Data")
+            chunk["content"] = await asyncio.to_thread(
+                tabler.summarize_table, chunk["content"], ctx
+            )
+        return chunk
 
-    print(f"✨ [Pipeline] SUCCESS: Ingestion for {manual_id} finalized.")
-    return {"status": "success", "chunks_processed": len(chunks)}
+    # Process enrichments in managed batches to respect rate limits
+    enriched_chunks = []
+    sem = asyncio.Semaphore(10) # Limit concurrent API calls
+    
+    async def safe_enrich(c):
+        async with sem:
+            return await enrich_chunk(c)
+
+    enriched_chunks = await asyncio.gather(*[safe_enrich(c) for c in chunks])
+    
+    # 4. Embedding & Storage
+    print(f"💾 [Pipeline] Stage 4/4: Embedding and persistence...")
+    
+    batch_size = 20
+    for i in range(0, len(enriched_chunks), batch_size):
+        batch = enriched_chunks[i:i + batch_size]
+        print(f"   ∟ Committing batch {i//batch_size + 1}...")
+        
+        db = SessionLocal()
+        try:
+            for chunk in batch:
+                if not chunk["content"]: continue
+                
+                emb = embedder.embed_text(chunk["content"])
+                db_chunk = ManualChunk(
+                    manual_id=chunk["manual_id"],
+                    type=chunk["type"],
+                    content=chunk["content"],
+                    path=chunk.get("path"),
+                    embedding=emb,
+                    page=chunk["page"]
+                )
+                db.add(db_chunk)
+            db.commit()
+        except Exception as e:
+            print(f"   ⚠️ [Pipeline] Batch commit failed: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+    print(f"✨ [Pipeline v2] SUCCESS: {manual_id} fully ingested.")
+    return {"status": "success", "chunks": len(enriched_chunks)}
+
+def process_manual(file_path: str, manual_id: str):
+    """Sync wrapper for the async pipeline. Handles existing event loops."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # If in a running loop (like FastAPI), we can't use asyncio.run()
+        # The caller (api/endpoints.py) should ideally await process_manual_async directly.
+        # But for safety, we provide this warning.
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(process_manual_async(file_path, manual_id))
+    else:
+        return asyncio.run(process_manual_async(file_path, manual_id))

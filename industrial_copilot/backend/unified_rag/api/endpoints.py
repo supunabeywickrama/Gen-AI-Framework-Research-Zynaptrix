@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Background
 from pydantic import BaseModel
 import shutil
 import os
-from unified_rag.ingestion.pipeline import process_manual
+from unified_rag.ingestion.pipeline import process_manual_async
 from unified_rag.retrieval.rag import RAGGenerator
 
 router = APIRouter()
@@ -41,7 +41,7 @@ async def ingest_manual(
         
     # Process immediately
     try:
-        result = process_manual(file_path, manual_id)
+        result = await process_manual_async(file_path, manual_id)
         print(f"🏁 [API] Ingestion successful for {manual_id}!")
         return {"message": "Manual ingested successfully", "details": result}
     except Exception as e:

@@ -1,6 +1,8 @@
 import fitz  # PyMuPDF
 import os
 import logging
+import numpy as np
+import cv2
 from PIL import Image
 
 # Suppress pypdf warnings
@@ -59,30 +61,36 @@ class DocumentParser:
 
     def parse_pdf(self, file_path: str, manual_id: str):
         """
-        Processes PDF:
-        - Layout Detection YOLOv8 DocLayNet -> Text Blocks / Figures
-        - Uses Trigram mapping back to the Page
-        - EasyOCR fallback for dense regions
-        - Camelot fallback for tables
+        Processes PDF with Structural Context & Agentic Figure Splitting:
+        - Maintains 'current_section' context for every item.
+        - Uses YOLOv8 for layout Detection.
+        - Uses FigureSplitter to decompose composite drawings.
         """
+        from services.figure_splitter import FigureSplitter
+        splitter = FigureSplitter()
+        
         print(f"📄 [Parser] Opening PDF: {file_path}")
         doc = fitz.open(file_path)
         parsed_data = []
         total_pages = len(doc)
         
+        # In-memory tracking of the document's structural hierarchy
+        current_section = "General Information"
+        
         print(f"📖 [Parser] PDF has {total_pages} pages. Starting extraction...")
         
         for page_num in range(total_pages):
-            print(f"   ∟ Processing Page {page_num + 1}/{total_pages}...")
+            page_idx = page_num + 1
+            print(f"   ∟ Processing Page {page_idx}/{total_pages}...")
             page = doc.load_page(page_num)
             
-            # Use YOLOv8 AI Layout Detection if weights are installed
+            # Step 1: Layout Detection
+            pix = page.get_pixmap(dpi=150)
+            img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            
             if self.layout_model:
-                pix = page.get_pixmap(dpi=150)
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                
-                # Inference using YOLOv8
-                results = self.layout_model(img, verbose=False)
+                results = self.layout_model(Image.fromarray(img_array), verbose=False)
                 boxes = results[0].boxes
                 names = self.layout_model.names
                 
@@ -90,67 +98,82 @@ class DocumentParser:
                 for box in boxes:
                     cls_id = int(box.cls[0].item())
                     class_name = names[cls_id].lower()
-                    
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     
-                    # Convert PIL coordinates back to PyMuPDF exact point scales
                     x_scale = page.rect.width / pix.width
                     y_scale = page.rect.height / pix.height
                     rect = fitz.Rect(x1 * x_scale, y1 * y_scale, x2 * x_scale, y2 * y_scale)
                     
-                    # FIGURE / PICTURE: AI cleanly cropped
+                    # Update Section Header Context
+                    if "title" in class_name or "header" in class_name:
+                        txt = page.get_text("text", clip=rect).strip()
+                        if txt and len(txt) > 3:
+                            current_section = txt
+                            print(f"      [Structure] New Section Detected: {current_section}")
+
+                    # FIGURES: Use Agentic Splitting
                     if "picture" in class_name or "figure" in class_name:
-                        crop = img.crop((x1, y1, x2, y2))
+                        # Extract the raw region
+                        raw_crop = img_bgr[int(y1):int(y2), int(x1):int(x2)]
                         
-                        image_filename = f"{manual_id}_p{page_num+1}_img{img_index}.png"
-                        image_path = os.path.join(self.output_dir, image_filename)
-                        crop.save(image_path)
-                        print(f"      [Image] Extracted figure to {image_path}")
+                        parent_ctx = f"Figure on Page {page_idx} under section '{current_section}'"
+                        print(f"      [Figure] Decomposing composite drawing...")
+                        sub_figures = splitter.split_image_sam(raw_crop, parent_context=parent_ctx)
                         
-                        parsed_data.append({
-                            "type": "image",
-                            "path": image_path,
-                            "page": page_num + 1
-                        })
-                        img_index += 1
+                        if not sub_figures:
+                            # Fallback to simple crop if splitter finds nothing
+                            image_filename = f"{manual_id}_p{page_idx}_fig{img_index}.png"
+                            image_path = os.path.join(self.output_dir, image_filename)
+                            cv2.imwrite(image_path, raw_crop)
+                            parsed_data.append({
+                                "type": "image", "path": image_path, "page": page_idx,
+                                "metadata": {"section": current_section, "label": "Main Diagram"}
+                            })
+                            img_index += 1
+                        else:
+                            for i, sub in enumerate(sub_figures):
+                                sub_filename = f"{manual_id}_p{page_idx}_sub{img_index}_{i}.png"
+                                sub_path = os.path.join(self.output_dir, sub_filename)
+                                cv2.imwrite(sub_path, sub["crop"])
+                                
+                                parsed_data.append({
+                                    "type": "image", "path": sub_path, "page": page_idx,
+                                    "metadata": {
+                                        "section": current_section, 
+                                        "label": sub["label"],
+                                        "parent_context": parent_ctx
+                                    }
+                                })
+                                print(f"         ∟ Isolated component: {sub['label']}")
+                            img_index += 1
                         
-                    # TEXT BLOCKS: Accurately bound text
-                    elif "text" in class_name or "title" in class_name or "list" in class_name:
+                    # TEXT 
+                    elif "text" in class_name or "list" in class_name:
                         text_content = page.get_text("text", clip=rect).strip()
                         if text_content:
                             parsed_data.append({
-                                "type": "text",
-                                "content": text_content,
-                                "page": page_num + 1
+                                "type": "text", "content": text_content, "page": page_idx,
+                                "metadata": {"section": current_section}
                             })
             else:
-                print(f"      [Warning] No YOLO model found, using basic text extraction for page {page_num+1}")
-                # FALLBACK to PyMuPDF Heuristics if YOLO weights are missing
+                # Basic Fallback logic
                 blocks = page.get_text("blocks")
                 for b in blocks:
                     if b[6] == 0:
-                        text_content = b[4].strip()
-                        if text_content:
-                            parsed_data.append({"type": "text", "content": text_content, "page": page_num + 1})
+                        txt = b[4].strip()
+                        if txt: parsed_data.append({"type": "text", "content": txt, "page": page_idx, "metadata": {"section": current_section}})
 
-            # Step 4: Extract Tables (Camelot)
-            # 3. Tables Fallback (Camelot)
+            # Step 2: Tables (with context)
             if camelot:
                 try:
-                    print(f"      📊 [Parser] Extracting tables from page {page_num + 1} using Camelot (Lattice flavor)...")
-                    tables = camelot.read_pdf(file_path, pages=str(page_num + 1), flavor='lattice')
-                    print(f"      ✅ [Parser] Camelot found {len(tables)} potential tables on page {page_num + 1}.")
+                    tables = camelot.read_pdf(file_path, pages=str(page_idx), flavor='lattice')
                     for i, table in enumerate(tables):
                         parsed_data.append({
-                            "type": "table",
-                            "page": page_num + 1,
-                            "content": table.df.to_json(),
-                            "metadata": {"manual_id": manual_id, "table_index": i}
+                            "type": "table", "page": page_idx, "content": table.df.to_json(),
+                            "metadata": {"section": current_section, "table_index": i}
                         })
-                        print(f"         [Table] Extracted table {i+1} from page {page_num + 1}")
-                except Exception as e:
-                    print(f"      ⚠️ [Parser] Camelot table extraction failed for page {page_num + 1}: {e}")
-            else:
-                print(f"      [Warning] Camelot not installed. Skipping table extraction for page {page_num+1}.")
+                except Exception: pass
+            
+        return parsed_data
             
         return parsed_data

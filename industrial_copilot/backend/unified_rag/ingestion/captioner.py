@@ -11,9 +11,35 @@ class ImageCaptioner:
     def __init__(self):
         self.client = openai.OpenAI(api_key=settings.openai_api_key)
         
-    def generate_caption(self, image_path: str) -> str:
-        """Uses OpenAI GPT-4o Vision API to describe the technical diagram/image in high detail."""
-        print(f"      📸 [Vision] Sending image to OpenAI GPT-4o: {image_path}")
+    def generate_caption(self, image_path: str, metadata: dict = None) -> str:
+        """
+        Uses OpenAI GPT-4o Vision API to describe the image with full document context.
+        """
+        metadata = metadata or {}
+        page = metadata.get("page", "Unknown")
+        section = metadata.get("section", "Unknown Section")
+        label = metadata.get("label", "Diagram")
+        parent_ctx = metadata.get("parent_context", "")
+        
+        # Build a hyper-contextualized prompt
+        context_str = f"This image is a technical illustration labeled '{label}' on Page {page} of the manual."
+        if section != "Unknown Section":
+            context_str += f" It is located within the section: '{section}'."
+        if parent_ctx:
+            context_str += f" Context: {parent_ctx}."
+
+        print(f"      📸 [Vision] Sending image to GPT-4o with context: {label} (Page {page})")
+        
+        prompt = (
+            f"You are a Senior Industrial Systems Engineer. {context_str}\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Describe this specific technical component in extremely high detail.\n"
+            "2. Explain its function and relationship to the surrounding assembly mentioned in the context.\n"
+            "3. Identify any labels, bolts, connectors, or part numbers visible.\n"
+            "4. Use professional engineering terminology. This description will be used for RAG retrieval, "
+            "so include keywords that a technician would use when troubleshooting this specific part."
+        )
+
         try:
             base64_image = encode_image(image_path)
             response = self.client.chat.completions.create(
@@ -22,24 +48,15 @@ class ImageCaptioner:
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text", 
-                                "text": "Describe this industrial/technical manual image in extremely high detail. Mention exact parts, labels, and what the diagram is demonstrating. This will be embedded as text to search for this image, so include keywords an engineer might use."
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "high"}}
                         ]
                     }
                 ],
-                max_tokens=300
+                max_tokens=500
             )
             caption = response.choices[0].message.content.strip()
-            print(f"      ✨ [Vision] Successfully generated caption ({len(caption)} chars)")
-            return caption
+            return f"### {label} (Context: {section})\n\n{caption}"
         except Exception as e:
             print(f"      ❌ [Vision] API FAILED for {image_path}: {e}")
-            return "Image description unavailable."
+            return f"Technical diagram '{label}' on Page {page}. Description unavailable."
