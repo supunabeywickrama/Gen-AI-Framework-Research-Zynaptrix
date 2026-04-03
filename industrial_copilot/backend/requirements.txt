@@ -16,7 +16,9 @@ opencv-python-headless
 huggingface_hub
 openai
 langchain
+langchain-text-splitters
 langchain-openai
+nest-asyncio
 langchain-core
 langgraph
 influxdb-client
@@ -34,4 +36,5 @@ pytest
 requests
 sentence-transformers
 streamlit
+scipy
 pypdf
