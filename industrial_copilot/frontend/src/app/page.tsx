@@ -339,7 +339,7 @@ export default function IndustrialCopilotDashboard() {
     <div className="min-h-screen bg-transparent text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col">
       
       {/* Header */}
-      <header className="flex justify-between items-center mb-8 border-b border-slate-800 pb-6 bg-slate-900/40 backdrop-blur-md shadow-xl rounded-2xl p-6">
+      <header className="flex justify-between items-center mb-8 border-b border-slate-800 pb-6 bg-[#020617] shadow-2xl shadow-black/80 rounded-2xl p-6">
         <div>
           <h1 className="text-3xl font-black bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent flex items-center gap-3">
             <Server className="text-blue-500" />
@@ -411,7 +411,7 @@ export default function IndustrialCopilotDashboard() {
                   const val = rawVal !== undefined ? Number(rawVal).toFixed(2) : '—';
                   const accentColor = chartColors[i % chartColors.length];
                   return (
-                   <div key={sensor.sensor_id} className={`bg-slate-900/40 backdrop-blur-md border border-slate-800/50 rounded-3xl p-6 shadow-xl relative overflow-hidden group transition-all hover:border-slate-700`}>
+                   <div key={sensor.sensor_id} className={`bg-[#0a0f1e] border-slate-700/50 rounded-3xl p-6 shadow-2xl relative overflow-hidden group transition-all hover:border-slate-700`}>
                       <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${accentColor}-500`}>
                          <Icon size={60} />
                       </div>
@@ -432,7 +432,7 @@ export default function IndustrialCopilotDashboard() {
              })()}
           </div>
 
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/50 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[600px] flex flex-col">
+          <div className="bg-[#0a0f1e] border-slate-700/50 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[600px] flex flex-col">
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-xl font-black flex items-center gap-3 text-white">
                  <Activity className="text-blue-500" /> Real-Time Sensor Stream
@@ -488,7 +488,7 @@ export default function IndustrialCopilotDashboard() {
 
         {/* Right Aspect: Anomaly Archive (1/3 width) */}
         <div className="flex flex-col gap-6 overflow-hidden min-h-0">
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/50 rounded-3xl p-6 shadow-2xl flex flex-col h-full overflow-hidden">
+          <div className="bg-[#0a0f1e] border-slate-700/50 rounded-3xl p-6 shadow-2xl flex flex-col h-full overflow-hidden">
             <h2 className="text-lg font-black text-white mb-6 flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Database className="text-blue-400" size={20} /> Incident Registry
@@ -586,11 +586,11 @@ export default function IndustrialCopilotDashboard() {
         <div className={`fixed inset-0 bg-transparent backdrop-blur-[6px] z-50 flex items-center justify-center animate-in fade-in duration-500 ${isChatMaximized ? 'p-0' : 'p-4'}`}>
           
           {/* Main Dialog Panel with Premium Glow */}
-          <div className={`relative bg-slate-950/20 backdrop-blur-[40px] border border-blue-500/30 shadow-[0_0_120px_rgba(30,58,138,0.3)] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-700 transition-all ${isChatMaximized ? 'w-full h-full rounded-none' : 'w-full max-w-4xl h-[85vh] rounded-[3rem]'}`}>
+          <div className={`relative bg-[#020617] border border-blue-500/30 shadow-[0_0_120px_rgba(30,58,138,0.3)] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-700 transition-all ${isChatMaximized ? 'w-full h-full rounded-none' : 'w-full max-w-4xl h-[85vh] rounded-[3rem]'}`}>
              
-             {/* Secondary Nebula Interior Layer */}
-             <div className="absolute inset-0 pointer-events-none opacity-40">
-                <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 10% 90%, #1e40af 0%, transparent 40%), radial-gradient(circle at 90% 10%, #4338ca 0%, transparent 40%)' }} />
+             {/* Secondary Nebula Interior Layer (Subtle) */}
+             <div className="absolute inset-0 pointer-events-none opacity-20">
+                <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 10% 90%, #0a0f1e 0%, transparent 40%), radial-gradient(circle at 90% 10%, #03041a 0%, transparent 40%)' }} />
              </div>
              
              {/* 💎 Premium Modal Header */}
@@ -630,7 +630,7 @@ export default function IndustrialCopilotDashboard() {
              </div>
 
              {/* Modal Chat Body */}
-             <div className="relative flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800 bg-slate-950/40 backdrop-blur-sm">
+             <div className="relative flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800 bg-[#0a0f1e]">
                 {loadingHistory[activeAnomaly?.id.toString() || 'general'] ? (
                     <div className="h-full flex flex-col items-center justify-center opacity-40">
                         <RotateCw size={48} className="animate-spin text-blue-500 mb-6" />
@@ -669,10 +669,10 @@ export default function IndustrialCopilotDashboard() {
                             <div key={index} className="flex justify-start">
                               <div className={`max-w-[90%] w-full rounded-3xl shadow-2xl border overflow-hidden transition-all duration-500 ${
                                 isResponded 
-                                  ? 'bg-slate-800/50 border-slate-700/50 opacity-70' 
+                                  ? 'bg-slate-900 border-slate-700/50 opacity-70' 
                                   : isSafety 
-                                    ? 'bg-gradient-to-br from-amber-950/40 to-slate-800 border-amber-500/40' 
-                                    : 'bg-gradient-to-br from-blue-950/40 to-slate-800 border-blue-500/40'
+                                    ? 'bg-[#1a0f02] border-amber-500/40' 
+                                    : 'bg-[#0a0f1e] border-blue-500/40'
                               }`}>
                                 <div className={`px-6 py-3 flex items-center justify-between ${
                                   isSafety ? 'bg-amber-500/10 border-b border-amber-500/20' : 'bg-blue-500/10 border-b border-blue-500/20'
@@ -786,7 +786,7 @@ export default function IndustrialCopilotDashboard() {
                         if (msg.role === 'user') {
                           return (
                             <div key={index} className="flex justify-end">
-                              <div className="max-w-[75%] bg-gradient-to-br from-blue-600/70 to-indigo-700/70 backdrop-blur-[35px] text-white rounded-[2.5rem] rounded-br-none p-7 shadow-[0_20px_50px_rgba(0,0,0,0.4)] border border-blue-400/30 relative">
+                              <div className="max-w-[75%] bg-[#1e3a8a] text-white rounded-3xl rounded-br-none p-7 shadow-2xl border border-blue-500/30 relative">
                                 <p className="text-sm leading-relaxed whitespace-pre-line">{msg.content}</p>
                               </div>
                             </div>
@@ -801,8 +801,8 @@ export default function IndustrialCopilotDashboard() {
                           >
                             <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm transition-all duration-300 ${
                                isFinalSummary
-                                ? 'bg-gradient-to-br from-emerald-950/40 to-slate-900 border-2 border-emerald-500/50 text-emerald-50 w-full'
-                                : 'bg-slate-900/40 backdrop-blur-[45px] text-slate-100 rounded-tl-none border-white/10 hover:border-blue-500/30'
+                                ? 'bg-[#064e3b] border-emerald-500/50 text-emerald-50 w-full'
+                                : 'bg-[#111827] border-slate-700/50 text-slate-100 rounded-tl-none'
                             }`}>
                               <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase tracking-widest font-bold">
                                 {isFinalSummary ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Bot className="w-3 h-3" />}
@@ -922,7 +922,7 @@ export default function IndustrialCopilotDashboard() {
              </div>
 
              {/* Modal Footer */}
-             <div className="relative p-8 bg-slate-950/90 border-t border-slate-800 space-y-6">
+             <div className="relative p-8 bg-[#000000] border-t border-slate-800 space-y-6">
                  <div className="flex items-center gap-4">
                     <input 
                         className={`flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200 ${(!isAssistantOpen && activeAnomaly?.resolved) ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -957,7 +957,7 @@ export default function IndustrialCopilotDashboard() {
               </p>
               
               <textarea 
-                className="w-full bg-slate-950/40 backdrop-blur-sm border border-slate-800 rounded-3xl p-6 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[150px] mb-8"
+                className="w-full bg-[#0a0f1e] border border-slate-800 rounded-3xl p-6 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[150px] mb-8"
                 placeholder="e.g. Manually bled the hydraulic lines and replaced the leaking filter at ACV-102. Thermal integrity restored."
                 value={operatorFix}
                 onChange={(e) => setOperatorFix(e.target.value)}
