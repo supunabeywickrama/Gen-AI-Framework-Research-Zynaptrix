@@ -336,7 +336,7 @@ export default function IndustrialCopilotDashboard() {
 
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col">
+    <div className="min-h-screen bg-transparent text-slate-200 p-8 font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col">
       
       {/* Header */}
       <header className="flex justify-between items-center mb-8 border-b border-slate-800 pb-6 bg-slate-900/40 backdrop-blur-md shadow-xl rounded-2xl p-6">
@@ -411,7 +411,7 @@ export default function IndustrialCopilotDashboard() {
                   const val = rawVal !== undefined ? Number(rawVal).toFixed(2) : '—';
                   const accentColor = chartColors[i % chartColors.length];
                   return (
-                   <div key={sensor.sensor_id} className={`bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group transition-all hover:border-slate-700`}>
+                   <div key={sensor.sensor_id} className={`bg-slate-900/40 backdrop-blur-md border border-slate-800/50 rounded-3xl p-6 shadow-xl relative overflow-hidden group transition-all hover:border-slate-700`}>
                       <div className={`absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity text-${accentColor}-500`}>
                          <Icon size={60} />
                       </div>
@@ -432,7 +432,7 @@ export default function IndustrialCopilotDashboard() {
              })()}
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[600px] flex flex-col">
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/50 rounded-3xl p-8 shadow-2xl relative overflow-hidden h-[600px] flex flex-col">
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-xl font-black flex items-center gap-3 text-white">
                  <Activity className="text-blue-500" /> Real-Time Sensor Stream
@@ -488,7 +488,7 @@ export default function IndustrialCopilotDashboard() {
 
         {/* Right Aspect: Anomaly Archive (1/3 width) */}
         <div className="flex flex-col gap-6 overflow-hidden min-h-0">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col h-full overflow-hidden">
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/50 rounded-3xl p-6 shadow-2xl flex flex-col h-full overflow-hidden">
             <h2 className="text-lg font-black text-white mb-6 flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Database className="text-blue-400" size={20} /> Incident Registry
@@ -581,38 +581,56 @@ export default function IndustrialCopilotDashboard() {
         )}
       </button>
 
-      {/* Chat Modal / Pop-up */}
+      {/* 🚀 PREMIUM GALAXY CHAT MODAL */}
       {isChatOpen && (
-        <div className={`fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center animate-in fade-in duration-300 ${isChatMaximized ? 'p-0' : 'p-4'}`}>
-          <div className={`bg-slate-900 border border-slate-800 shadow-4xl flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-500 transition-all ${isChatMaximized ? 'w-full h-full rounded-none' : 'w-full max-w-4xl h-[85vh] rounded-[2.5rem]'}`}>
+        <div className={`fixed inset-0 bg-transparent backdrop-blur-[6px] z-50 flex items-center justify-center animate-in fade-in duration-500 ${isChatMaximized ? 'p-0' : 'p-4'}`}>
+          
+          {/* Main Dialog Panel with Premium Glow */}
+          <div className={`relative bg-slate-950/20 backdrop-blur-[40px] border border-blue-500/30 shadow-[0_0_120px_rgba(30,58,138,0.3)] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-700 transition-all ${isChatMaximized ? 'w-full h-full rounded-none' : 'w-full max-w-4xl h-[85vh] rounded-[3rem]'}`}>
              
-             {/* Modal Header */}
-             <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-                <div>
-                   <h2 className="text-2xl font-black flex items-center gap-3 text-white">
-                      {isAssistantOpen ? <Bot className="text-emerald-500" /> : <ShieldCheck className="text-blue-500" />}
-                      {isAssistantOpen ? "System Assistant" : "Diagnostic Copilot"}
+             {/* Secondary Nebula Interior Layer */}
+             <div className="absolute inset-0 pointer-events-none opacity-40">
+                <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 10% 90%, #1e40af 0%, transparent 40%), radial-gradient(circle at 90% 10%, #4338ca 0%, transparent 40%)' }} />
+             </div>
+             
+             {/* 💎 Premium Modal Header */}
+             <div className="p-10 border-b border-blue-500/20 flex justify-between items-center bg-transparent backdrop-blur-md relative overflow-hidden">
+                <div className="relative z-10">
+                   <h2 className="text-3xl font-black flex items-center gap-4 text-white uppercase tracking-tighter drop-shadow-[0_0_15px_rgba(59,130,246,0.6)]">
+                      {isAssistantOpen ? <Bot className="text-emerald-400" /> : <ShieldCheck className="text-blue-400" />}
+                      {isAssistantOpen ? "Central Assistant" : "Diagnostic Copilot"}
                    </h2>
-                   {isAssistantOpen ? (
-                       <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mt-1">Mentor Mode • RAG + Search</p>
-                   ) : activeAnomaly ? (
-                     <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mt-1">Investigating Incident #{activeAnomaly.id}</p>
-                   ) : (
-                     <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">General Inquiry Mode</p>
-                   )}
+                   <div className="flex items-center gap-3 mt-2">
+                     <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_#3b82f6]"></div>
+                     {isAssistantOpen ? (
+                         <p className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em]">RAG Orchestration Eng • Level 4 Access</p>
+                     ) : activeAnomaly ? (
+                       <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em]">Resolving High-Intensity Incident #{activeAnomaly.id}</p>
+                     ) : (
+                       <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">System State: Surveillance Standby</p>
+                     )}
+                   </div>
                 </div>
-                 <div className="flex items-center gap-4">
-                    <button onClick={() => setIsChatMaximized(!isChatMaximized)} className="text-slate-500 hover:text-white transition-colors">
-                        {isChatMaximized ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
+                 <div className="flex items-center gap-6 relative z-10">
+                    {!isAssistantOpen && activeAnomaly && !activeAnomaly.resolved && (
+                      <button 
+                        onClick={() => setIsResolveModalOpen(true)}
+                        className="flex items-center gap-3 px-8 py-3 bg-emerald-600/90 hover:bg-emerald-500 text-white text-[11px] font-black uppercase tracking-[0.1em] rounded-2xl transition-all shadow-[0_0_40px_rgba(16,185,129,0.3)] active:scale-95 animate-pulse border border-emerald-400/30 backdrop-blur-sm"
+                      >
+                         <CheckCircle size={18} /> Complete Task
+                      </button>
+                    )}
+                    <button onClick={() => setIsChatMaximized(!isChatMaximized)} className="text-slate-400 hover:text-white transition-all transform hover:scale-110">
+                        {isChatMaximized ? <Minimize2 size={22} /> : <Maximize2 size={22} />}
                     </button>
-                    <button onClick={() => { setIsChatOpen(false); dispatch(setAssistantOpen(false)); }} className="text-slate-500 hover:text-red-500 transition-colors">
-                        <X size={24} />
+                    <button onClick={() => { setIsChatOpen(false); dispatch(setAssistantOpen(false)); }} className="text-slate-400 hover:text-red-500 transition-all transform hover:scale-110">
+                        <X size={26} />
                     </button>
                 </div>
              </div>
 
              {/* Modal Chat Body */}
-             <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800">
+             <div className="relative flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800 bg-slate-950/40 backdrop-blur-sm">
                 {loadingHistory[activeAnomaly?.id.toString() || 'general'] ? (
                     <div className="h-full flex flex-col items-center justify-center opacity-40">
                         <RotateCw size={48} className="animate-spin text-blue-500 mb-6" />
@@ -768,7 +786,7 @@ export default function IndustrialCopilotDashboard() {
                         if (msg.role === 'user') {
                           return (
                             <div key={index} className="flex justify-end">
-                              <div className="max-w-[75%] bg-blue-600 text-white rounded-3xl rounded-br-none p-5 shadow-xl">
+                              <div className="max-w-[75%] bg-gradient-to-br from-blue-600/70 to-indigo-700/70 backdrop-blur-[35px] text-white rounded-[2.5rem] rounded-br-none p-7 shadow-[0_20px_50px_rgba(0,0,0,0.4)] border border-blue-400/30 relative">
                                 <p className="text-sm leading-relaxed whitespace-pre-line">{msg.content}</p>
                               </div>
                             </div>
@@ -784,7 +802,7 @@ export default function IndustrialCopilotDashboard() {
                             <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm transition-all duration-300 ${
                                isFinalSummary
                                 ? 'bg-gradient-to-br from-emerald-950/40 to-slate-900 border-2 border-emerald-500/50 text-emerald-50 w-full'
-                                : 'bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700/50'
+                                : 'bg-slate-900/40 backdrop-blur-[45px] text-slate-100 rounded-tl-none border-white/10 hover:border-blue-500/30'
                             }`}>
                               <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase tracking-widest font-bold">
                                 {isFinalSummary ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Bot className="w-3 h-3" />}
@@ -868,7 +886,7 @@ export default function IndustrialCopilotDashboard() {
                                   {/* Intelligent chat bar — same as step cards */}
                                   {msg.stepData?.stepId && (
                                     <>
-                                      <div className="flex gap-2 items-center bg-slate-900/80 border border-slate-700/60 rounded-2xl px-4 py-3 focus-within:border-blue-500/50 transition-colors">
+                                      <div className="flex gap-2 items-center bg-[#0a0f1e]/95 border border-slate-700/60 rounded-2xl px-4 py-3 focus-within:border-blue-500/50 transition-colors">
                                         <input
                                           className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-500 focus:outline-none"
                                           placeholder="Tell me what you've done, or ask a question..."
@@ -904,7 +922,7 @@ export default function IndustrialCopilotDashboard() {
              </div>
 
              {/* Modal Footer */}
-             <div className="p-8 bg-slate-950/80 border-t border-slate-800 space-y-6">
+             <div className="relative p-8 bg-slate-950/90 border-t border-slate-800 space-y-6">
                  <div className="flex items-center gap-4">
                     <input 
                         className={`flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200 ${(!isAssistantOpen && activeAnomaly?.resolved) ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -928,8 +946,8 @@ export default function IndustrialCopilotDashboard() {
 
       {/* Incident Resolution Modal */}
       {isResolveModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[60] flex items-center justify-center p-4">
-           <div className="bg-slate-900 border border-slate-800 rounded-[3rem] p-10 max-w-lg w-full shadow-4xl animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 bg-transparent backdrop-blur-xl z-[60] flex items-center justify-center p-4">
+           <div className="bg-slate-900/40 backdrop-blur-2xl border border-slate-800 rounded-[3rem] p-10 max-w-lg w-full shadow-4xl animate-in zoom-in-95 duration-300">
               <div className="h-16 w-16 bg-emerald-600/20 text-emerald-500 rounded-3xl flex items-center justify-center mb-6">
                  <CheckCircle size={32} />
               </div>
@@ -939,7 +957,7 @@ export default function IndustrialCopilotDashboard() {
               </p>
               
               <textarea 
-                className="w-full bg-slate-950 border border-slate-800 rounded-3xl p-6 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[150px] mb-8"
+                className="w-full bg-slate-950/40 backdrop-blur-sm border border-slate-800 rounded-3xl p-6 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[150px] mb-8"
                 placeholder="e.g. Manually bled the hydraulic lines and replaced the leaking filter at ACV-102. Thermal integrity restored."
                 value={operatorFix}
                 onChange={(e) => setOperatorFix(e.target.value)}
