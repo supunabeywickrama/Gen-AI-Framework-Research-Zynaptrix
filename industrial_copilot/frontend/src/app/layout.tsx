@@ -12,13 +12,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Zynaptrix | Industrial AI Copilot",
-  description: "Real-time Multi-Asset Factory Fleet Monitoring & Diagnostic Platform",
-};
-
 import { ReduxProvider } from "../store/Provider";
 import NavBar from "../components/NavBar";
+import GalaxyBackground from "../components/GalaxyBackground";
 
 export default function RootLayout({
   children,
@@ -29,8 +25,10 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      style={{ background: 'transparent' }}
     >
-      <body className="min-h-full flex flex-col bg-slate-950">
+      <body className="min-h-full flex flex-col" style={{ background: 'transparent', position: 'relative' }}>
+        <GalaxyBackground />
         <ReduxProvider>
           <NavBar />
           <main className="flex-1">
