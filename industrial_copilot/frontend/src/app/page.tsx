@@ -58,7 +58,6 @@ import {
   resolveAnomaly,
   inquireCopilot,
   setAssistantOpen,
-  addAssistantMessage,
   inquireAssistant,
   respondToStep,
   clarifyStep,
@@ -68,6 +67,10 @@ import {
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId, fetchMachineConfig } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
+import MachineSelector from '../components/MachineSelector';
+import AssistantSidebar from '../components/AssistantSidebar';
+import AssistantMachineSelector from '../components/AssistantMachineSelector';
+import { fetchAssistantSessions } from '../store/slices/copilotSlice';
 
 // ── Icon mapping: icon_type (from OpenAI) → Lucide component + accent color ──
 const ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
@@ -104,7 +107,19 @@ export default function IndustrialCopilotDashboard() {
   const dispatch = useDispatch<AppDispatch>();
   
   // Redux-driven State
-  const { telemetry, chatHistory, anomalyHistory, activeAnomaly, systemState, anomalyScore, loadingHistory, activeProcedure, assistantHistory, isAssistantOpen } = useSelector((state: RootState) => state.copilot);
+  const { 
+      telemetry, 
+      chatHistory, 
+      anomalyHistory, 
+      activeAnomaly, 
+      systemState, 
+      anomalyScore, 
+      loadingHistory, 
+      activeProcedure, 
+      isAssistantOpen,
+      activeAssistantSessionId,
+      assistantMachineId
+  } = useSelector((state: RootState) => state.copilot);
   const { machines, currentMachineId, machineConfigs } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
   
@@ -130,6 +145,7 @@ export default function IndustrialCopilotDashboard() {
     setIsMounted(true);
     dispatch(fetchMachines());
     dispatch(fetchSimulatorStatus());
+    dispatch(fetchAssistantSessions());
   }, [dispatch]);
 
   useEffect(() => {
@@ -210,8 +226,11 @@ export default function IndustrialCopilotDashboard() {
     setQuery('');
     
     if (isAssistantOpen) {
-      dispatch(addAssistantMessage({ role: 'user', content: finalQuery }));
-      dispatch(inquireAssistant({ query: finalQuery, machineId: currentMachineId }));
+      dispatch(inquireAssistant({ 
+          query: finalQuery, 
+          machineId: assistantMachineId || undefined,
+          sessionId: activeAssistantSessionId || undefined
+      }));
     } else {
       let processedQuery = finalQuery;
       // Intelligent Switch: If manual repair is requested, use the Conversational Wizard mode
@@ -239,77 +258,67 @@ export default function IndustrialCopilotDashboard() {
   };
 
   const handleStepResponse = (stepId: string, status: string, stepText?: string) => {
-    if (!activeAnomaly) return;
     const comment = stepComments[stepId];
+    // Assistant mode — send a follow-up message as the user
+    if (isAssistantOpen) {
+      let followUp = comment?.trim() || '';
+      if (!followUp) {
+        if (status === 'done') followUp = `I have completed: "${stepText || stepId}". What is next?`;
+        else if (status === 'cant_do') followUp = `I am stuck on: "${stepText || stepId}". Can you show me how to do this in more detail?`;
+        else followUp = `I need help with: "${stepText || stepId}"."`;
+      }
+      dispatch(inquireAssistant({
+        query: followUp,
+        machineId: assistantMachineId || undefined,
+        sessionId: activeAssistantSessionId || undefined
+      }));
+      setStepComments(prev => ({...prev, [stepId]: ''}));
+      return;
+    }
+    if (!activeAnomaly) return;
     const targetId = activeAnomaly.id.toString();
-
-    const isWizard = stepId.startsWith('wizard_');
-
+    const isWizard = stepId.startsWith('wizard_') || stepId.startsWith('rag_');
     if (isWizard) {
       let predefinedMessage = comment?.trim() || "";
       if (!predefinedMessage) {
          if (status === 'done') predefinedMessage = "I've done this step successfully.";
          else if (status === 'cant_do') predefinedMessage = "I'm stuck with this step, please show the alternative way.";
       }
-      
-      dispatch(sendStepMessage({
-        targetId,
-        machineId: activeAnomaly.machine_id,
-        stepId,
-        stepText: stepText || 'Current maintenance task',
-        message: predefinedMessage
-      }));
+      dispatch(sendStepMessage({ targetId, machineId: activeAnomaly.machine_id, stepId, stepText: stepText || 'Current maintenance task', message: predefinedMessage }));
     } else {
       if (status === 'done' && (!comment || !comment.trim())) {
         dispatch(respondToStep({ targetId, stepId, status: status as any }));
       } else {
-        dispatch(submitAdaptiveStepResponse({
-          targetId,
-          machineId: activeAnomaly.machine_id,
-          stepId,
-          status,
-          comment,
-          stepText
-        }));
+        dispatch(submitAdaptiveStepResponse({ targetId, machineId: activeAnomaly.machine_id, stepId, status, comment, stepText }));
       }
     }
-    
     setStepComments(prev => ({...prev, [stepId]: ''}));
   };
 
   const handleSendStepMessage = (stepId: string, stepText: string) => {
-    if (!activeAnomaly) return;
     const msg = stepChatInputs[stepId]?.trim();
     if (!msg) return;
-    dispatch(sendStepMessage({
-      targetId: activeAnomaly.id.toString(),
-      machineId: activeAnomaly.machine_id,
-      stepId,
-      stepText,
-      message: msg
-    }));
+    if (isAssistantOpen) {
+      dispatch(inquireAssistant({ query: msg, machineId: assistantMachineId || undefined, sessionId: activeAssistantSessionId || undefined }));
+      setStepChatInputs(prev => ({...prev, [stepId]: ''}));
+      return;
+    }
+    if (!activeAnomaly) return;
+    dispatch(sendStepMessage({ targetId: activeAnomaly.id.toString(), machineId: activeAnomaly.machine_id, stepId, stepText, message: msg }));
     setStepChatInputs(prev => ({...prev, [stepId]: ''}));
   };
 
   const handleClarifyStep = (stepId: string, stepText: string) => {
+    if (isAssistantOpen) {
+      dispatch(inquireAssistant({ query: `Explain in more detail: "${stepText}"`, machineId: assistantMachineId || undefined, sessionId: activeAssistantSessionId || undefined }));
+      return;
+    }
     if (!activeAnomaly) return;
-    const isWizard = stepId.startsWith('wizard_');
-    
+    const isWizard = stepId.startsWith('wizard_') || stepId.startsWith('rag_');
     if (isWizard) {
-      dispatch(sendStepMessage({
-        targetId: activeAnomaly.id.toString(),
-        machineId: activeAnomaly.machine_id,
-        stepId,
-        stepText,
-        message: "Please tell me exactly how to do this step in simple terms."
-      }));
+      dispatch(sendStepMessage({ targetId: activeAnomaly.id.toString(), machineId: activeAnomaly.machine_id, stepId, stepText, message: "Please tell me exactly how to do this step in simple terms." }));
     } else {
-      dispatch(clarifyStep({
-        targetId: activeAnomaly.id.toString(),
-        machineId: activeAnomaly.machine_id,
-        stepText: stepText,
-        stepId: stepId
-      }));
+      dispatch(clarifyStep({ targetId: activeAnomaly.id.toString(), machineId: activeAnomaly.machine_id, stepText, stepId }));
     }
   };
 
@@ -354,17 +363,7 @@ export default function IndustrialCopilotDashboard() {
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="flex bg-slate-800/50 rounded-xl p-1 border border-slate-700/50">
-            {machines.map(m => (
-              <button
-                key={m.machine_id}
-                onClick={() => dispatch(setCurrentMachineId(m.machine_id))}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${currentMachineId === m.machine_id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                {m.name}
-              </button>
-            ))}
-          </div>
+          <MachineSelector />
           <button
               onClick={toggleSimulation}
               className={`px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 shadow-2xl ${isSimulating ? 'bg-red-500/10 text-red-500 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30'}`}
@@ -603,7 +602,7 @@ export default function IndustrialCopilotDashboard() {
                    <div className="flex items-center gap-3 mt-2">
                      <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_#3b82f6]"></div>
                      {isAssistantOpen ? (
-                         <p className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em]">RAG Orchestration Eng • Level 4 Access</p>
+                          <p className="text-emerald-400 text-[10px] font-black uppercase tracking-[0.2em]">RAG Orchestration Eng • Level 4 Access</p>
                      ) : activeAnomaly ? (
                        <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.2em]">Resolving High-Intensity Incident #{activeAnomaly.id}</p>
                      ) : (
@@ -612,6 +611,9 @@ export default function IndustrialCopilotDashboard() {
                    </div>
                 </div>
                  <div className="flex items-center gap-6 relative z-10">
+                    {isAssistantOpen && (
+                        <AssistantMachineSelector />
+                    )}
                     {!isAssistantOpen && activeAnomaly && !activeAnomaly.resolved && (
                       <button 
                         onClick={() => setIsResolveModalOpen(true)}
@@ -629,15 +631,20 @@ export default function IndustrialCopilotDashboard() {
                 </div>
              </div>
 
-             {/* Modal Chat Body */}
-             <div className="relative flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800 bg-[#0a0f1e]">
-                {loadingHistory[activeAnomaly?.id.toString() || 'general'] ? (
-                    <div className="h-full flex flex-col items-center justify-center opacity-40">
-                        <RotateCw size={48} className="animate-spin text-blue-500 mb-6" />
-                        <p className="text-xs font-bold uppercase tracking-widest">Restoring Context...</p>
-                    </div>
-                ) : (
-                    (isAssistantOpen ? assistantHistory : (chatHistory[activeAnomaly?.id.toString() || 'general'] || [])).map((msg, index) => {
+             {/* Modal Content Wrapper: Split View if Assistant is Open */}
+             <div className="flex flex-1 overflow-hidden">
+                {isAssistantOpen && <AssistantSidebar />}
+
+                 <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0f1e] relative">
+                     {/* Modal Chat Body */}
+                     <div className="relative flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-800">
+                        {loadingHistory[isAssistantOpen ? 'assistant' : (activeAnomaly?.id.toString() || 'general')] ? (
+                            <div className="h-full flex flex-col items-center justify-center opacity-40">
+                                <RotateCw size={48} className="animate-spin text-blue-500 mb-6" />
+                                <p className="text-xs font-bold uppercase tracking-widest">Restoring Context...</p>
+                            </div>
+                        ) : (
+                            (chatHistory[isAssistantOpen ? 'assistant' : (activeAnomaly?.id.toString() || 'general')] || []).map((msg, index) => {
                         const hasSuggestion = msg.role === 'agent' && msg.content.includes('[SUGGESTION:');
                         const displayContent = msg.content
                             .replace(/\[PROCEDURE_START\][\s\S]*?\[PROCEDURE_END\]/gi, '')
@@ -825,9 +832,16 @@ export default function IndustrialCopilotDashboard() {
                               )}
                               {displayContent && (
                                 <div className="text-sm leading-relaxed space-y-3 markdown-content">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 shadow-lg" />) }}>
-                                    {displayContent}
-                                  </ReactMarkdown>
+                                  {msg.type === 'wizard_step' && msg.stepData?.subphaseTitle ? (
+                                    <>
+                                      <div className="text-base font-bold text-slate-200">{displayContent}</div>
+                                      <div className="text-sm text-slate-400 leading-relaxed">{msg.stepData.subphaseTitle}</div>
+                                    </>
+                                  ) : (
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 shadow-lg" />) }}>
+                                      {displayContent}
+                                    </ReactMarkdown>
+                                  )}
                                 </div>
                               )}
                               
@@ -915,32 +929,33 @@ export default function IndustrialCopilotDashboard() {
                             </div>
                           </div>
                         );
-                    })
-                )}
+                      })
+                    )}
+                    <div ref={chatEndRef} />
+                 </div>
 
-                <div ref={chatEndRef} />
+                 {/* Modal Footer */}
+                 <div className="relative p-8 bg-[#000000] border-t border-slate-800 space-y-6">
+                     <div className="flex items-center gap-4">
+                        <input 
+                            className={`flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200 ${(!isAssistantOpen && activeAnomaly?.resolved) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            placeholder={isAssistantOpen ? "Ask the System Assistant anything..." : activeAnomaly?.resolved ? "Incident resolved (Archived)" : "Type diagnostic query..."}
+                            value={query}
+                            readOnly={!isAssistantOpen && activeAnomaly?.resolved}
+                            onChange={(e) => setQuery(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleManualInquiry()}
+                        />
+                        <button 
+                           onClick={() => handleManualInquiry()}
+                           className="p-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-95"
+                        >
+                           <Send size={20} />
+                        </button>
+                    </div>
+                 </div>
+               </div>
              </div>
-
-             {/* Modal Footer */}
-             <div className="relative p-8 bg-[#000000] border-t border-slate-800 space-y-6">
-                 <div className="flex items-center gap-4">
-                    <input 
-                        className={`flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-200 ${(!isAssistantOpen && activeAnomaly?.resolved) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        placeholder={isAssistantOpen ? "Ask the System Assistant anything..." : activeAnomaly?.resolved ? "Incident resolved (Archived)" : "Type diagnostic query..."}
-                        value={query}
-                        readOnly={!isAssistantOpen && activeAnomaly?.resolved}
-                        onChange={(e) => setQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleManualInquiry()}
-                    />
-                    <button 
-                       onClick={() => handleManualInquiry()}
-                       className="p-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-95"
-                    >
-                       <Send size={20} />
-                    </button>
-                </div>
-             </div>
-          </div>
+           </div>
         </div>
       )}
 

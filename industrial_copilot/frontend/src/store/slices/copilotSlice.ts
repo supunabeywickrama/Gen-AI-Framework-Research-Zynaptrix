@@ -93,6 +93,13 @@ export interface AnomalyRecord {
   resolved?: boolean;
 }
 
+export interface AssistantSession {
+  id: number;
+  machine_id?: string;
+  title: string;
+  timestamp: string;
+}
+
 interface CopilotState {
   telemetry: TelemetryPoint[];
   chatHistory: Record<string, ChatMessage[]>;
@@ -104,8 +111,11 @@ interface CopilotState {
   activeAgents: string[];
   fleetHealth: Record<string, number>;
   activeProcedure: Record<string, ActiveProcedure>;
-  assistantHistory: ChatMessage[];
+  assistantSessions: AssistantSession[];
+  activeAssistantSessionId: number | null;
   isAssistantOpen: boolean;
+  isAssistantSidebarOpen: boolean;
+  assistantMachineId: string | null;
 }
 
 const initialState: CopilotState = {
@@ -123,10 +133,11 @@ const initialState: CopilotState = {
   activeAgents: ['Sensor', 'Diagnostic', 'Strategy', 'Critic', 'RAG'],
   fleetHealth: {},
   activeProcedure: {},
-  assistantHistory: [
-    { role: 'agent', content: "👋 Hello! I am your **Industrial System Assistant**. I can help you register new assets, ingest technical manuals, or explain how our anomaly detection works. How can I assist you today?" }
-  ],
+  assistantSessions: [],
+  activeAssistantSessionId: null,
   isAssistantOpen: false,
+  isAssistantSidebarOpen: true,
+  assistantMachineId: null,
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -398,16 +409,57 @@ export const sendStepMessage = createAsyncThunk(
   }
 );
 
+export const fetchAssistantSessions = createAsyncThunk(
+  'copilot/fetchAssistantSessions',
+  async () => {
+    const response = await fetch(`${API_BASE}/api/assistant/sessions`);
+    if (!response.ok) throw new Error('Failed to fetch sessions');
+    return await response.json();
+  }
+);
+
+export const deleteAssistantSession = createAsyncThunk(
+  'copilot/deleteAssistantSession',
+  async (sessionId: number) => {
+    const response = await fetch(`${API_BASE}/api/assistant/sessions/${sessionId}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error('Failed to delete session');
+    return sessionId;
+  }
+);
+
+export const fetchAssistantHistory = createAsyncThunk(
+  'copilot/fetchAssistantHistory',
+  async (sessionId: number) => {
+    const response = await fetch(`${API_BASE}/api/assistant/sessions/${sessionId}/history`);
+    if (!response.ok) throw new Error('Failed to fetch session history');
+    return { sessionId, messages: await response.json() };
+  }
+);
+
 export const inquireAssistant = createAsyncThunk(
   'copilot/inquireAssistant',
-  async ({ query, machineId }: { query: string; machineId?: string }) => {
+  async ({ query, machineId, sessionId }: { query: string; machineId?: string; sessionId?: number }, { dispatch, getState }) => {
+    const state = getState() as any;
+    const finalMachineId = machineId || state.copilot.assistantMachineId;
+    
+    // Add user message to UI immediately under the 'assistant' key
+    dispatch(addChatMessage({ 
+        role: 'user', 
+        content: query, 
+        targetId: 'assistant' 
+    }));
+
     const response = await fetch(`${API_BASE}/api/copilot/assistant`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, machine_id: machineId }),
+      body: JSON.stringify({ query, machine_id: finalMachineId, session_id: sessionId }),
     });
     if (!response.ok) throw new Error('Assistant failed to respond');
-    return response.json();
+    const data = await response.json();
+    if (data.session_id && sessionId !== data.session_id) {
+        dispatch(fetchAssistantSessions());
+    }
+    return data;
   }
 );
 
@@ -446,11 +498,20 @@ const copilotSlice = createSlice({
         state.activeAnomaly = null; // Close active anomaly if opening assistant
       }
     },
-    addAssistantMessage: (state, action: PayloadAction<ChatMessage>) => {
-      state.assistantHistory.push(action.payload);
+    setAssistantSidebarOpen: (state, action: PayloadAction<boolean>) => {
+      state.isAssistantSidebarOpen = action.payload;
+    },
+    setActiveAssistantSessionId: (state, action: PayloadAction<number | null>) => {
+      state.activeAssistantSessionId = action.payload;
+      if (action.payload === null) {
+          state.chatHistory['assistant'] = [];
+      }
     },
     setActiveAgents(state, action: PayloadAction<string[]>) {
       state.activeAgents = action.payload;
+    },
+    setAssistantMachineId: (state, action: PayloadAction<string | null>) => {
+      state.assistantMachineId = action.payload;
     },
 
     // === NEW: Step-by-step procedure interaction ===
@@ -691,16 +752,60 @@ const copilotSlice = createSlice({
         delete state.activeProcedure[anomalyId.toString()];
     })
 
-    // --- Assistant Cases ---
-    .addCase(inquireAssistant.pending, (state) => {
-        // Option to add a 'thinking' state if needed
-    })
-    .addCase(inquireAssistant.fulfilled, (state, action) => {
-        state.assistantHistory.push({
-          role: 'agent',
-          content: action.payload.content,
-          timestamp: action.payload.timestamp
+    // --- Assistant Session Handlers ---
+    builder.addCase(fetchAssistantSessions.fulfilled, (state, action) => {
+        state.assistantSessions = action.payload;
+    });
+    
+    builder.addCase(deleteAssistantSession.fulfilled, (state, action) => {
+        state.assistantSessions = state.assistantSessions.filter(s => s.id !== action.payload);
+        if (state.activeAssistantSessionId === action.payload) {
+            state.activeAssistantSessionId = null;
+            state.chatHistory['assistant'] = [];
+        }
+    });
+
+    builder.addCase(fetchAssistantHistory.pending, (state, action) => {
+        state.loadingHistory['assistant'] = true;
+    });
+
+    builder.addCase(fetchAssistantHistory.fulfilled, (state, action) => {
+        const { messages, sessionId } = action.payload;
+        state.chatHistory['assistant'] = messages;
+        state.activeAssistantSessionId = sessionId;
+        state.loadingHistory['assistant'] = false;
+    });
+
+    builder.addCase(fetchAssistantHistory.rejected, (state) => {
+        state.loadingHistory['assistant'] = false;
+    });
+
+    builder.addCase(inquireAssistant.pending, (state) => {
+        state.loadingHistory['assistant'] = true;
+    });
+
+    builder.addCase(inquireAssistant.fulfilled, (state, action) => {
+        const { session_id, content, timestamp, type, images } = action.payload;
+        state.loadingHistory['assistant'] = false;
+
+        if (!state.activeAssistantSessionId || state.activeAssistantSessionId !== session_id) {
+            state.activeAssistantSessionId = session_id;
+        }
+        if (!state.chatHistory['assistant']) {
+            state.chatHistory['assistant'] = [];
+        }
+
+        state.chatHistory['assistant'].push({
+            role: 'agent',
+            content,
+            timestamp,
+            type: 'text',
+            images,
         });
+    });
+
+    builder.addCase(inquireAssistant.rejected, (state) => {
+        state.loadingHistory['assistant'] = false;
     });
 
     // === MAIN HANDLER: Copilot Response ===
@@ -956,7 +1061,9 @@ export const {
   setSystemState, 
   setAnomalyScore,
   setAssistantOpen,
-  addAssistantMessage,
+  setAssistantSidebarOpen,
+  setActiveAssistantSessionId,
+  setAssistantMachineId,
   setActiveAgents,
   respondToStep,
   forceAdvanceStep

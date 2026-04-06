@@ -64,3 +64,27 @@ class InteractionMemory(Base):
     operator_fix = Column(Text, nullable=True) # Final operator input
     embedding = Column(Vector, nullable=False) # 1536 OpenAI
     timestamp = Column(String, nullable=False)
+
+class AssistantSession(Base):
+    __tablename__ = "assistant_sessions"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    machine_id = Column(String, index=True, nullable=True) # Context machine
+    title = Column(String, nullable=False)
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=False)
+
+class AssistantMessage(Base):
+    __tablename__ = "assistant_messages"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("assistant_sessions.id"), nullable=False)
+    role = Column(String, nullable=False) # 'agent' | 'user'
+    content = Column(Text, nullable=False)
+    type = Column(String, default='text') # 'text', 'wizard_step', etc.
+    step_data = Column(Text, nullable=True) # JSON string
+    images = Column(Text, nullable=True) # JSON list
+    timestamp = Column(String, nullable=False)
+

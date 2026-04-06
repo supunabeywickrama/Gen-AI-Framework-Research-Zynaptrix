@@ -25,6 +25,8 @@ from services.anomaly_service import AnomalyService
 
 logging.basicConfig(level=logging.INFO)
 
+import time
+
 try:
     with engine.connect() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -32,7 +34,19 @@ try:
 except Exception as e:
     logging.warning(f"Vector extension issue: {e}")
 
-Base.metadata.create_all(bind=engine)
+# Robust initialization for Neon DB connection drops
+max_retries = 3
+for attempt in range(max_retries):
+    try:
+        Base.metadata.create_all(bind=engine)
+        logging.info("✅ Database tables verified successfully.")
+        break
+    except Exception as e:
+        logging.error(f"⚠️ Database connection exception during init (attempt {attempt+1}/{max_retries}): {e}")
+        if attempt < max_retries - 1:
+            time.sleep(2)
+        else:
+            logging.critical("❌ Could not connect to the database after retries. Starting anyway, some features may fail.")
 
 app = FastAPI(title="Generative AI Multi-Agent Industrial Copilot")
 
