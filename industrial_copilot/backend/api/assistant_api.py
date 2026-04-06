@@ -238,6 +238,18 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
         db.add(user_msg)
         db.commit()
 
+        # 🧵 PHASE 0.5: Context Fetching (Conversation Memory)
+        # Fetch last 10 messages for context, excluding the one we just added to keep logic clean
+        messages_db = db.query(AssistantMessage).filter(
+            AssistantMessage.session_id == active_session_id
+        ).order_by(AssistantMessage.timestamp.desc()).offset(1).limit(10).all()
+        
+        chat_context = []
+        # Reverse to get chronological order
+        for m in reversed(messages_db):
+            role = "assistant" if m.role == "agent" else m.role
+            chat_context.append({"role": role, "content": m.content})
+
         # 🧠 PHASE 1: Intent Classification (enhanced)
         # First check if it's a system guide topic (highest priority)
         guide_topic = detect_guide_topic(req.query)
@@ -248,18 +260,18 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
                 "- ONBOARDING: Questions about how this Industrial Copilot system works, its features, navigation.\n"
                 "- RAG: Technical questions about machine maintenance, specs, repairs, faults — needs manual lookup.\n"
                 "- SEARCH: General internet knowledge, industry news, standards.\n"
-                "- CHAT: Simple greetings or off-topic.\n\n"
+                "- CHAT: Simple greetings or off-topic conversational fillers.\n\n"
                 f"Query: '{req.query}'\n"
                 "Respond with ONLY one word: ONBOARDING, RAG, SEARCH, or CHAT."
             )
             intent_res = openai.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "user", "content": intent_prompt}],
+                messages=[{"role": "system", "content": "You are a specialized router."}] + chat_context + [{"role": "user", "content": intent_prompt}],
                 max_tokens=10, temperature=0
             )
             intent = intent_res.choices[0].message.content.strip().upper()
             # Force RAG if machine is selected and query is technical
-            is_technical = any(x in req.query.lower() for x in ["repair", "fix", "step", "how to", "guide", "procedure", "fault", "error", "maintenance", "spec", "troubleshoot"])
+            is_technical = any(x in req.query.lower() for x in ["repair", "fix", "step", "how to", "guide", "procedure", "fault", "error", "maintenance", "spec", "troubleshoot", "explain"])
             if active_machine_id and is_technical and intent in ("CHAT", "ONBOARDING"):
                 intent = "RAG"
         else:
@@ -295,9 +307,10 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
                 f"Answer based on this system documentation:\n\n{SYSTEM_ONBOARDING_CONTEXT}\n\n"
                 f"Be concise, clear, and practical. Use numbered steps where relevant. Format your response in plain markdown."
             )
+            messages = [{"role": "system", "content": f"{machine_context_prefix}{system_prompt}"}] + chat_context + [{"role": "user", "content": req.query}]
             final_res = openai.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": f"{machine_context_prefix}{system_prompt}"}, {"role": "user", "content": req.query}],
+                messages=messages,
                 max_tokens=1000
             )
             final_answer = final_res.choices[0].message.content.strip()
@@ -309,19 +322,26 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
             mode = RAGMode.CONVERSATIONAL_WIZARD if is_procedural else RAGMode.SUMMARY
             rag_res = rag_gen.generate_response(req.query, "Technical_Manual", active_machine_id, mode=mode)
             rag_answer = rag_res.get('answer', '')
-            images = rag_res.get('retrieved_images', [])
+            images = rag_res.get('images', [])  # Corrected key from 'retrieved_images'
             context = f"Manual Lookup ({active_machine_id})"
+
+            image_tags = "\n".join([f"  - [IMAGE_{i}] for document reference {i}" for i in range(len(images))]) if images else "No diagrams available."
 
             system_prompt = (
                 f"{machine_context_prefix}"
                 f"You are an expert maintenance engineer for {active_machine_id}. "
-                f"Based on the following extracted manual content, provide a clear, numbered step-by-step answer.\n\n"
+                f"Based on the following extracted manual content, provide a highly structured, clear, numbered step-by-step answer.\n\n"
                 f"MANUAL CONTENT:\n{rag_answer}\n\n"
-                f"RULES: Use numbered steps. Be specific. Do not use buttons or special markers. Plain markdown only."
+                f"AVAILABLE DIAGRAMS:\n{image_tags}\n\n"
+                f"RULES:\n"
+                f"1. Use numbered steps for procedures.\n"
+                f"2. You MUST interleave [IMAGE_N] tags (e.g. [IMAGE_0]) directly into your steps where the visual reference is most helpful.\n"
+                f"3. Be specific and technical. Plain markdown only."
             )
+            messages = [{"role": "system", "content": system_prompt}] + chat_context + [{"role": "user", "content": req.query}]
             final_res = openai.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": req.query}],
+                messages=messages,
                 max_tokens=1500
             )
             final_answer = final_res.choices[0].message.content.strip()
@@ -330,9 +350,10 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
         elif intent == "SEARCH":
             search_data = perform_web_search(req.query)
             system_prompt = f"Synthesize these industrial search results into a clear answer:\n{search_data}"
+            messages = [{"role": "system", "content": f"{machine_context_prefix}{system_prompt}"}] + chat_context + [{"role": "user", "content": req.query}]
             final_res = openai.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": f"{machine_context_prefix}{system_prompt}"}, {"role": "user", "content": req.query}],
+                messages=messages,
                 max_tokens=800
             )
             final_answer = final_res.choices[0].message.content.strip()
@@ -344,9 +365,10 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
                 "You help operators and engineers navigate and use the system. "
                 "If no machine is selected, encourage the user to select one from the dropdown for specific manual queries."
             )
+            messages = [{"role": "system", "content": f"{machine_context_prefix}{system_prompt}"}] + chat_context + [{"role": "user", "content": req.query}]
             final_res = openai.chat.completions.create(
                 model="gpt-4o-mini",
-                messages=[{"role": "system", "content": f"{machine_context_prefix}{system_prompt}"}, {"role": "user", "content": req.query}],
+                messages=messages,
                 max_tokens=400
             )
             final_answer = final_res.choices[0].message.content.strip()

@@ -167,6 +167,10 @@ def critic_node(state: CopilotState):
     # If it's an initial anomaly detection (no user query yet), provide a brief summary.
     user_q = state.get('user_query')
     image_tags = "\n".join([f"![Image]({img})" for img in state.get('retrieved_images', [])])
+    # 📸 Automated Image Interleaving: Ensure the UI receives image markers
+    images = state.get('retrieved_images', [])
+    image_tags = "\n".join([f"![Technical Diagram]({img})" for img in images])
+    
     if user_q and user_q.strip():
         final_output = state['strategy_report']
     else:

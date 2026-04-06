@@ -3,7 +3,7 @@ from unified_rag.db.models import ManualChunk, InteractionMemory
 from unified_rag.embeddings.embedder import embedder
 
 class RetrievalEngine:
-    def __init__(self, top_k_text=3, top_k_image=1, top_k_memory=2):
+    def __init__(self, top_k_text=3, top_k_image=3, top_k_memory=2):
         self.top_k_text = top_k_text
         self.top_k_image = top_k_image
         self.top_k_memory = top_k_memory
@@ -30,12 +30,25 @@ class RetrievalEngine:
             
         # 3. Search Manual (Images)
         try:
-            image_results = db.query(ManualChunk).filter(
+            image_query = db.query(ManualChunk).filter(
                 ManualChunk.manual_id == manual_id,
                 ManualChunk.type == "image"
             ).order_by(
                 ManualChunk.embedding.cosine_distance(query_emb)
-            ).limit(self.top_k_image).all()
+            )
+            
+            # Fetch extra to allow for deduplication
+            raw_image_results = image_query.limit(self.top_k_image * 2).all()
+            
+            # Deduplicate by path
+            image_results = []
+            seen_paths = set()
+            for img in raw_image_results:
+                if img.path not in seen_paths:
+                    seen_paths.add(img.path)
+                    image_results.append(img)
+                if len(image_results) >= self.top_k_image:
+                    break
         except:
             image_results = []
 

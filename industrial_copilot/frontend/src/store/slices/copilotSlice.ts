@@ -856,6 +856,8 @@ const copilotSlice = createSlice({
           return;
       }
 
+      const isWizard = content.includes('[CONVERSATIONAL_WIZARD]') || action.meta.arg.query.includes('[CONVERSATIONAL_WIZARD]') || /^\d+\./m.test(content);
+
       history[lastIdx] = {
         role: 'agent',
         content: finalContent.trim(),
@@ -864,13 +866,13 @@ const copilotSlice = createSlice({
         dbId: action.payload.db_id,
         hasSuggestion: /\[SUGGESTION:[\s\S]*?Generate full step-by-step repair procedure[\s\S]*?\]/i.test(content),
         isDocAlert: content.includes('⚠️ Documentation Alert'),
-        // Identify as a wizard step to enable action buttons
-        type: (content.includes('[CONVERSATIONAL_WIZARD]') || action.meta.arg.query.includes('[CONVERSATIONAL_WIZARD]')) ? 'wizard_step' : 'text',
-        stepData: {
+        // Force wizard_step type if it's a guide or has numbered steps
+        type: isWizard ? 'wizard_step' : 'text',
+        stepData: isWizard ? {
             stepId: 'wizard_flow',
             stepText: finalContent.trim(),
-            phaseType: 'diagnostic', phaseTitle: 'Guided Repair', subphaseTitle: 'AI Navigator', stepIndex: 1, totalSteps: 1
-        } as any
+            phaseType: 'diagnostic', phaseTitle: 'Guided Repair', subphaseTitle: 'Expert Guidance', stepIndex: 1, totalSteps: 1
+        } as any : undefined
       };
 
       // If we've started a wizard session, initialize the step context
