@@ -322,15 +322,21 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
             mode = RAGMode.CONVERSATIONAL_WIZARD if is_procedural else RAGMode.SUMMARY
             rag_res = rag_gen.generate_response(req.query, "Technical_Manual", active_machine_id, mode=mode)
             rag_answer = rag_res.get('answer', '')
-            images = rag_res.get('retrieved_images', [])
+            images = rag_res.get('images', [])  # Corrected key from 'retrieved_images'
             context = f"Manual Lookup ({active_machine_id})"
+
+            image_tags = "\n".join([f"  - [IMAGE_{i}] for document reference {i}" for i in range(len(images))]) if images else "No diagrams available."
 
             system_prompt = (
                 f"{machine_context_prefix}"
                 f"You are an expert maintenance engineer for {active_machine_id}. "
-                f"Based on the following extracted manual content, provide a clear, numbered step-by-step answer.\n\n"
+                f"Based on the following extracted manual content, provide a highly structured, clear, numbered step-by-step answer.\n\n"
                 f"MANUAL CONTENT:\n{rag_answer}\n\n"
-                f"RULES: Use numbered steps. Be specific. Do not use buttons or special markers. Plain markdown only."
+                f"AVAILABLE DIAGRAMS:\n{image_tags}\n\n"
+                f"RULES:\n"
+                f"1. Use numbered steps for procedures.\n"
+                f"2. You MUST interleave [IMAGE_N] tags (e.g. [IMAGE_0]) directly into your steps where the visual reference is most helpful.\n"
+                f"3. Be specific and technical. Plain markdown only."
             )
             messages = [{"role": "system", "content": system_prompt}] + chat_context + [{"role": "user", "content": req.query}]
             final_res = openai.chat.completions.create(

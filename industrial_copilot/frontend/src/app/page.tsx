@@ -322,19 +322,25 @@ export default function IndustrialCopilotDashboard() {
     }
   };
 
-  // Helper: render step text with inline images
+  // Helper: render step text with inline images + Markdown
   const renderStepContent = (text: string, images?: string[]) => {
-    const parts = text.split(/(\[IMAGE[_\s-]?\d+\])/gi);
-    return parts.map((part, i) => {
-      const match = part.match(/\[IMAGE[_\s-]?(\d+)\]/i);
-      if (match && images) {
-        const imgUrl = images[parseInt(match[1])];
-        if (imgUrl) {
-          return <img key={i} src={imgUrl} alt="Technical diagram" className="w-full max-w-lg h-auto rounded-xl border border-slate-700 my-3" />;
-        }
-      }
-      return <span key={i}>{part}</span>;
-    });
+    // We can use ReactMarkdown with custom image renderer to handle [IMAGE_N] replacement
+    // But since the current system uses [IMAGE_0], we will pre-replace them with standard markdown image tags
+    let processedText = text;
+    if (images && images.length > 0) {
+      images.forEach((url, idx) => {
+        const tag = new RegExp(`\\[IMAGE[_\s-]?${idx}\\]`, 'gi');
+        processedText = processedText.replace(tag, `![Technical Diagram](${url})`);
+      });
+    }
+
+    return (
+      <div className="markdown-content">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 shadow-lg" />) }}>
+          {processedText}
+        </ReactMarkdown>
+      </div>
+    );
   };
 
   const toggleSimulation = async () => {
@@ -697,9 +703,9 @@ export default function IndustrialCopilotDashboard() {
 
                                 <div className="p-6">
                                   {/* Human-readable step headline */}
-                                  <p className="text-white text-base font-semibold leading-relaxed">
+                                  <div className="text-white text-base leading-relaxed">
                                     {renderStepContent(msg.content, msg.images)}
-                                  </p>
+                                  </div>
 
                                   {sd.critical && !isResponded && (
                                     <div className="inline-flex items-center gap-1.5 bg-red-500/15 text-red-400 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border border-red-500/30 mt-3">
@@ -833,10 +839,9 @@ export default function IndustrialCopilotDashboard() {
                               {displayContent && (
                                 <div className="text-sm leading-relaxed space-y-3 markdown-content">
                                   {msg.type === 'wizard_step' && msg.stepData?.subphaseTitle ? (
-                                    <>
-                                      <div className="text-base font-bold text-slate-200">{displayContent}</div>
-                                      <div className="text-sm text-slate-400 leading-relaxed">{msg.stepData.subphaseTitle}</div>
-                                    </>
+                                    <div className="markdown-content">
+                                      {renderStepContent(displayContent, msg.images)}
+                                    </div>
                                   ) : (
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({node, ...props}) => (<img {...props} className="max-w-md max-h-80 object-contain rounded-xl border border-slate-600 my-3 shadow-lg" />) }}>
                                       {displayContent}
