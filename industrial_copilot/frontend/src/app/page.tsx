@@ -40,7 +40,8 @@ import {
   Bot,
   User,
   History,
-  X
+  X,
+  Download
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
@@ -64,13 +65,16 @@ import {
   submitAdaptiveStepResponse,
   forceAdvanceStep,
   sendStepMessage,
-  clearResolveState
+  clearResolveState,
+  exportAssistantSession,
+  resetExportProgress
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId, fetchMachineConfig } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
 import MachineSelector from '../components/MachineSelector';
 import AssistantSidebar from '../components/AssistantSidebar';
 import AssistantMachineSelector from '../components/AssistantMachineSelector';
+import ExportProgressModal from '../components/ExportProgressModal';
 import { fetchAssistantSessions } from '../store/slices/copilotSlice';
 
 // ── Icon mapping: icon_type (from OpenAI) → Lucide component + accent color ──
@@ -121,7 +125,8 @@ export default function IndustrialCopilotDashboard() {
       activeAssistantSessionId,
       assistantMachineId,
       resolveValidation,
-      resolveThankYouMessage
+      resolveThankYouMessage,
+      exportProgress
   } = useSelector((state: RootState) => state.copilot);
   const { machines, currentMachineId, machineConfigs } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
@@ -639,6 +644,15 @@ export default function IndustrialCopilotDashboard() {
                     {isAssistantOpen && (
                         <AssistantMachineSelector />
                     )}
+                    {isAssistantOpen && activeAssistantSessionId && (
+                      <button 
+                        onClick={() => dispatch(exportAssistantSession(activeAssistantSessionId))}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-blue-600/90 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-[0.1em] rounded-xl transition-all shadow-lg active:scale-95 border border-blue-400/30"
+                        title="Generate Professional Diagnostic Report"
+                      >
+                         <Download size={14} /> Generate Report
+                      </button>
+                    )}
                     {!isAssistantOpen && activeAnomaly && !activeAnomaly.resolved && (
                       <button 
                         onClick={() => setIsResolveModalOpen(true)}
@@ -1082,6 +1096,14 @@ export default function IndustrialCopilotDashboard() {
            </div>
         </div>
       )}
+      {/* ✅ Export Progress Modal */}
+      <ExportProgressModal
+        isOpen={exportProgress.isExporting}
+        progress={exportProgress.progress}
+        status={exportProgress.status}
+        errorMessage={exportProgress.errorMessage}
+        onClose={() => dispatch(resetExportProgress())}
+      />
     </div>
   );
 }

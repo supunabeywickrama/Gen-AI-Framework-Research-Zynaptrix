@@ -194,6 +194,158 @@ async def get_session_history(session_id: int, db: Session = Depends(get_db)):
         "timestamp": m.timestamp
     } for m in messages]
 
+@router.get("/api/assistant/sessions/{session_id}/export")
+async def export_session(session_id: int, db: Session = Depends(get_db)):
+    """
+    Export session data formatted for PDF generation.
+    Includes session metadata and full message history with images.
+    """
+    try:
+        # Get session info
+        session = db.query(AssistantSession).filter(AssistantSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get all messages
+        messages = db.query(AssistantMessage).filter(
+            AssistantMessage.session_id == session_id
+        ).order_by(AssistantMessage.timestamp).all()
+        
+        # Format messages for PDF
+        formatted_messages = []
+        for m in messages:
+            formatted_messages.append({
+                "role": m.role,
+                "content": m.content,
+                "images": json.loads(m.images) if m.images else [],
+                "timestamp": m.timestamp,
+                "context_source": None  # Can be added later if needed
+            })
+        
+        return {
+            "session_id": session.id,
+            "session_title": session.title,
+            "machine_context": session.machine_id,
+            "created_at": session.created_at,
+            "messages": formatted_messages
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to export session {session_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to export session")
+
+@router.get("/api/assistant/sessions/{session_id}/report")
+async def generate_report(session_id: int, db: Session = Depends(get_db)):
+    """
+    Generate structured diagnostic report from session.
+    Extracts problem, diagnosis, solution steps, and images using AI.
+    """
+    try:
+        # Get session info
+        session = db.query(AssistantSession).filter(AssistantSession.id == session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get all messages
+        messages = db.query(AssistantMessage).filter(
+            AssistantMessage.session_id == session_id
+        ).order_by(AssistantMessage.timestamp).all()
+        
+        if not messages:
+            raise HTTPException(status_code=400, detail="No messages in session")
+        
+        # Compile conversation
+        conversation = []
+        all_images = []
+        
+        for m in messages:
+            conversation.append(f"{m.role.upper()}: {m.content}")
+            if m.images:
+                try:
+                    imgs = json.loads(m.images)
+                    all_images.extend(imgs)
+                except:
+                    pass
+        
+        conversation_text = "\n\n".join(conversation)
+        logger.info(f"Report generation - Session {session_id}: {len(messages)} messages, {len(all_images)} images")
+        logger.info(f"Conversation text length: {len(conversation_text)} chars")
+        
+        # Use OpenAI to extract structured information
+        system_prompt = """You are a technical documentation expert. Extract key information from this diagnostic conversation and structure it as a professional maintenance report.
+
+Analyze the conversation carefully and extract:
+1. PROBLEM: What issue or problem was reported? Summarize in 2-3 clear sentences.
+2. DIAGNOSIS: What was identified as the root cause or analysis? Summarize in 2-4 sentences.
+3. SOLUTION_STEPS: Extract ALL repair steps, instructions, or procedures mentioned. Each step should be clear and actionable.
+
+IMPORTANT: Extract the ACTUAL content from the conversation. Do not use placeholder text.
+
+You MUST respond with ONLY valid JSON in this exact format (no markdown, no code blocks):
+{"problem": "actual problem description from conversation", "diagnosis": "actual diagnosis from conversation", "solution_steps": ["step 1 from conversation", "step 2 from conversation"]}"""
+
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Extract report data from this conversation:\n\n{conversation_text}"}
+            ],
+            temperature=0.2,
+            max_tokens=1500,
+            response_format={"type": "json_object"}
+        )
+        
+        ai_response = response.choices[0].message.content
+        logger.info(f"AI Response for report: {ai_response[:500]}...")
+        
+        # Parse AI response
+        try:
+            extracted = json.loads(ai_response)
+        except Exception as parse_err:
+            logger.error(f"Failed to parse AI response: {parse_err}")
+            # If AI response parsing fails, create report from raw conversation
+            extracted = {
+                "problem": conversation[0] if conversation else "No problem described",
+                "diagnosis": "Review conversation for detailed analysis",
+                "solution_steps": [msg for msg in conversation if msg.startswith("ASSISTANT:")][:5]
+            }
+        
+        # Validate extracted content is not empty
+        if not extracted.get("problem") or extracted.get("problem") == "":
+            extracted["problem"] = conversation[0] if conversation else "No problem description available"
+        if not extracted.get("diagnosis") or extracted.get("diagnosis") == "":
+            extracted["diagnosis"] = "Refer to conversation for diagnosis details"
+        if not extracted.get("solution_steps") or len(extracted.get("solution_steps", [])) == 0:
+            extracted["solution_steps"] = ["Review conversation for detailed steps"]
+        
+        # Format images with captions
+        formatted_images = []
+        for idx, img_url in enumerate(all_images):
+            formatted_images.append({
+                "url": img_url,
+                "caption": f"Reference Diagram {idx + 1}"
+            })
+        
+        logger.info(f"Report generated - Problem: {extracted.get('problem', '')[:100]}...")
+        
+        return {
+            "sessionId": session.id,
+            "machineId": session.machine_id,
+            "problemDescription": extracted.get("problem", "No problem description available"),
+            "diagnosis": extracted.get("diagnosis", "No diagnosis available"),
+            "solutionSteps": extracted.get("solution_steps", []),
+            "images": formatted_images,
+            "timestamp": session.created_at,
+            "operatorNotes": None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate report for session {session_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+
 @router.post("/api/copilot/assistant")
 async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
     """

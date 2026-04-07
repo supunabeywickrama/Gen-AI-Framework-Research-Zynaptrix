@@ -9,7 +9,8 @@ import {
   ChevronRight,
   Clock,
   Settings,
-  X
+  X,
+  Download
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
@@ -17,7 +18,8 @@ import {
   setAssistantSidebarOpen, 
   setActiveAssistantSessionId, 
   deleteAssistantSession,
-  fetchAssistantHistory
+  fetchAssistantHistory,
+  exportAssistantSession
 } from '../store/slices/copilotSlice';
 
 export default function AssistantSidebar() {
@@ -143,12 +145,28 @@ export default function AssistantSidebar() {
                     <span className="text-[9px] font-black bg-slate-800/80 px-2 py-0.5 rounded-lg text-slate-500 border border-slate-700/50">{s.machine_id}</span>
                   )}
                 </button>
-                <button
-                  onClick={() => dispatch(deleteAssistantSession(s.id))}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-red-500 text-white rounded-xl shadow-xl opacity-0 group-hover/item:opacity-100 transition-all hover:scale-110 active:scale-90"
-                >
-                  <Trash2 size={12} />
-                </button>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-2 opacity-0 group-hover/item:opacity-100 transition-all">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dispatch(exportAssistantSession(s.id));
+                    }}
+                    className="p-2 bg-blue-600 text-white rounded-xl shadow-xl transition-all hover:scale-110 active:scale-90"
+                    title="Export to PDF"
+                  >
+                    <Download size={12} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dispatch(deleteAssistantSession(s.id));
+                    }}
+                    className="p-2 bg-red-500 text-white rounded-xl shadow-xl transition-all hover:scale-110 active:scale-90"
+                    title="Delete Session"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
