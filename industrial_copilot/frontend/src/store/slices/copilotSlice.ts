@@ -123,6 +123,13 @@ interface CopilotState {
     suggestions: string[];
   } | null;
   resolveThankYouMessage: string | null;
+  // Export progress state
+  exportProgress: {
+    isExporting: boolean;
+    progress: number;
+    status: 'generating' | 'success' | 'error';
+    errorMessage?: string;
+  };
 }
 
 const initialState: CopilotState = {
@@ -147,6 +154,11 @@ const initialState: CopilotState = {
   assistantMachineId: null,
   resolveValidation: null,
   resolveThankYouMessage: null,
+  exportProgress: {
+    isExporting: false,
+    progress: 0,
+    status: 'generating',
+  },
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -456,6 +468,68 @@ export const fetchAssistantHistory = createAsyncThunk(
   }
 );
 
+export const exportAssistantSession = createAsyncThunk(
+  'copilot/exportAssistantSession',
+  async (sessionId: number, { rejectWithValue, dispatch }) => {
+    try {
+      console.log(`[Report Export] Starting professional report generation for session ${sessionId}`);
+      
+      // Update UI: Start exporting
+      dispatch(copilotSlice.actions.setExportProgress({ progress: 5, status: 'generating' }));
+      
+      // Fetch structured report data from backend
+      const response = await fetch(`${API_BASE}/api/assistant/sessions/${sessionId}/report`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Report Export] Backend error: ${response.status} - ${errorText}`);
+        throw new Error(`Failed to generate report: ${response.status} ${response.statusText}`);
+      }
+      
+      dispatch(copilotSlice.actions.setExportProgress({ progress: 30, status: 'generating' }));
+      
+      const reportData = await response.json();
+      console.log(`[Report Export] Received report data:`, reportData);
+      
+      // Check if we have solution steps
+      if (!reportData.solutionSteps || reportData.solutionSteps.length === 0) {
+        throw new Error('No solution steps available. Please ensure the conversation contains diagnostic information.');
+      }
+
+      dispatch(copilotSlice.actions.setExportProgress({ progress: 40, status: 'generating' }));
+
+      // Import professional report service
+      console.log('[Report Export] Loading professional report service...');
+      const { generateDiagnosticReport } = await import('../../professionalReportService');
+
+      // Generate professional diagnostic report PDF
+      console.log('[Report Export] Generating professional diagnostic report...');
+      await generateDiagnosticReport(reportData, (progress) => {
+        console.log(`[Report Export] Progress: ${progress}%`);
+        dispatch(copilotSlice.actions.setExportProgress({ progress, status: 'generating' }));
+      });
+
+      console.log('[Report Export] Professional report generated successfully!');
+      dispatch(copilotSlice.actions.setExportProgress({ progress: 100, status: 'success' }));
+      
+      // Auto-close modal after 2 seconds
+      setTimeout(() => {
+        dispatch(copilotSlice.actions.resetExportProgress());
+      }, 2000);
+      
+      return { success: true, sessionId };
+    } catch (error: any) {
+      console.error('[Report Export] Error:', error);
+      dispatch(copilotSlice.actions.setExportProgress({ 
+        progress: 0, 
+        status: 'error',
+        errorMessage: error.message 
+      }));
+      return rejectWithValue(error.message || 'Export failed');
+    }
+  }
+);
+
 export const inquireAssistant = createAsyncThunk(
   'copilot/inquireAssistant',
   async ({ query, machineId, sessionId }: { query: string; machineId?: string; sessionId?: number }, { dispatch, getState }) => {
@@ -536,6 +610,21 @@ const copilotSlice = createSlice({
     clearResolveState: (state) => {
       state.resolveValidation = null;
       state.resolveThankYouMessage = null;
+    },
+    
+    // Export progress actions
+    setExportProgress: (state, action: PayloadAction<{ progress: number; status: 'generating' | 'success' | 'error'; errorMessage?: string }>) => {
+      state.exportProgress = {
+        isExporting: true,
+        ...action.payload,
+      };
+    },
+    resetExportProgress: (state) => {
+      state.exportProgress = {
+        isExporting: false,
+        progress: 0,
+        status: 'generating',
+      };
     },
 
     // === NEW: Step-by-step procedure interaction ===
@@ -1131,7 +1220,9 @@ export const {
   setActiveAgents,
   respondToStep,
   forceAdvanceStep,
-  clearResolveState
+  clearResolveState,
+  setExportProgress,
+  resetExportProgress
 } = copilotSlice.actions;
 
 export default copilotSlice.reducer;
