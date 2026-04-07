@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, Float
 from pgvector.sqlalchemy import Vector
 from unified_rag.db.database import Base
 
@@ -35,6 +35,12 @@ class AnomalyRecord(Base):
     score = Column(Integer, nullable=False) # Normalized 0-100 or MSE
     sensor_data = Column(Text, nullable=True) # JSON string of readings
     resolved = Column(Boolean, default=False) # Manual HITL sign-off
+    
+    # AI Validation Layer fields (added 2026-04-06)
+    ai_validation_status = Column(String, nullable=True)  # TRUE_FAULT, SENSOR_GLITCH, NORMAL_WEAR
+    fault_category = Column(String, nullable=True)  # mechanical, thermal, electrical, process, sensor
+    ai_confidence_score = Column(Float, nullable=True)  # 0.0 - 1.0
+    ai_engineering_notes = Column(Text, nullable=True)  # AI reasoning explanation
 
 class ChatMessage(Base):
     __tablename__ = "chat_history"
