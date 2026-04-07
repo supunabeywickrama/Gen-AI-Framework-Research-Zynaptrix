@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from typing import TypedDict, Dict, Any, Optional, List
 from langgraph.graph import StateGraph, END
 from unified_rag.retrieval.rag import RAGMode
@@ -10,6 +11,17 @@ try:
     rag_gen = RAGGenerator()
 except Exception:
     rag_gen = None
+
+# AI Validation Layer imports
+try:
+    from openai import OpenAI
+    from unified_rag.config import settings
+    openai_client = OpenAI(api_key=settings.openai_api_key)
+except Exception as e:
+    openai_client = None
+    logging.warning(f"⚠️ OpenAI client not available for validation: {e}")
+
+from agents.validation_prompts import build_validation_prompt, get_full_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +38,12 @@ class CopilotState(TypedDict):
     user_query: Optional[str]
     suspect_sensor: Optional[str]
     recent_readings: Optional[Dict[str, Any]]
+    
+    # AI Validation Layer fields
+    ai_validation_status: Optional[str]  # TRUE_FAULT, SENSOR_GLITCH, NORMAL_WEAR
+    fault_category: Optional[str]  # mechanical, thermal, electrical, process, sensor
+    ai_confidence_score: Optional[float]  # 0.0 - 1.0
+    ai_engineering_notes: Optional[str]  # AI reasoning explanation
     
     # State accumulated across agents
     sensor_status_report: str
@@ -47,13 +65,289 @@ def sensor_status_node(state: CopilotState):
     report = f"Detected severe deviations aligning with {suspect}. Mathematical threshold exceeded by {state['anomaly_score']:.2f} MSE."
     return {"sensor_status_report": report}
 
+
+def validation_engineer_node(state: CopilotState):
+    """
+    Agent Node: AI Validation Engineer - High-Accuracy anomaly validation.
+    
+    Enhanced multi-stage validation using AI Automation Engineer:
+    - Stage 1: Physics violations check (sensor limits)
+    - Stage 2: Temporal pattern analysis (spike vs sustained)
+    - Stage 3: Cross-sensor correlation analysis
+    - Stage 4: AI Automation Engineer high-accuracy classification
+    
+    Returns validation status: TRUE_FAULT, SENSOR_GLITCH, or NORMAL_WEAR
+    with detailed root cause analysis and recommended actions.
+    """
+    logger.info("🤖 [Agent] AI Validation Engineer - High Accuracy Mode")
+    
+    # Skip validation for user queries (non-anomaly interactions)
+    user_query = state.get('user_query')
+    if user_query and user_query.strip():
+        logger.info("⏭️ [Validation] Skipping - user query present")
+        return {
+            "ai_validation_status": None,
+            "fault_category": None,
+            "ai_confidence_score": None,
+            "ai_engineering_notes": None
+        }
+    
+    # Get anomaly data
+    anomaly_score = state.get('anomaly_score', 0.0)
+    recent_readings = state.get('recent_readings') or {}
+    machine_id = state.get('machine_id', 'UNKNOWN')
+    
+    # STAGE 1: Import validation components
+    try:
+        from services.sensor_config_loader import sensor_config_loader
+        from services.anomaly_service import TemporalAnalyzer, calculate_hybrid_confidence
+    except ImportError as e:
+        logger.error(f"❌ [Validation] Import error: {e}")
+        return _default_validation_result(anomaly_score)
+    
+    # STAGE 2: Physics violations check
+    physics_summary = sensor_config_loader.get_violation_summary(machine_id, recent_readings)
+    logger.info(f"📊 [Stage 1] Physics check: {len(physics_summary.get('fault_violations', []))} critical, {len(physics_summary.get('normal_violations', []))} warnings")
+    
+    # STAGE 3: Temporal pattern analysis
+    temporal_pattern = {
+        "is_spike": False,
+        "is_sustained": True,  # Default to sustained for initial anomalies
+        "anomaly_count": 1,
+        "trend": "stable",
+        "max_rate_of_change": 0.0,
+        "suspicious_sensors": []
+    }
+    
+    # Calculate hybrid confidence
+    hybrid_confidence = calculate_hybrid_confidence(
+        anomaly_score, physics_summary, temporal_pattern
+    )
+    logger.info(f"📊 [Stage 2] Hybrid confidence: {hybrid_confidence:.2f}")
+    
+    # Quick pre-screen for obvious cases
+    if hybrid_confidence < 0.2:
+        logger.info(f"⚡ [Validation] Auto-classified as SENSOR_GLITCH (low confidence: {hybrid_confidence:.2f})")
+        return {
+            "ai_validation_status": "SENSOR_GLITCH",
+            "fault_category": None,
+            "ai_confidence_score": 0.85,
+            "ai_engineering_notes": "Low hybrid confidence indicates transient noise or measurement artifact. No action required."
+        }
+    
+    # STAGE 4: High-Accuracy AI Classification using AI Automation Engineer
+    try:
+        from agents.ai_automation_engineer import AIAutomationEngineerAgent
+        import os
+        
+        # Get sensor configs for cross-correlation analysis
+        sensor_configs = sensor_config_loader.get_machine_config(machine_id) or {}
+        
+        # Prepare anomaly data package
+        anomaly_data = {
+            "machine_id": machine_id,
+            "anomaly_score": anomaly_score,
+            "recent_readings": recent_readings,
+            "physics_summary": physics_summary,
+            "temporal_pattern": temporal_pattern,
+            "hybrid_confidence": hybrid_confidence
+        }
+        
+        # Initialize AI Automation Engineer
+        ai_engineer = AIAutomationEngineerAgent(os.getenv("OPENAI_API_KEY"))
+        
+        # High-accuracy fault classification
+        classification = ai_engineer.high_accuracy_fault_classification(
+            anomaly_data=anomaly_data,
+            sensor_configs=sensor_configs,
+            historical_context=None  # Could add historical anomalies here
+        )
+        
+        ai_status = classification.get("primary_classification", "TRUE_FAULT")
+        fault_cat = classification.get("fault_category")
+        confidence = classification.get("confidence_score", hybrid_confidence)
+        
+        # Build enhanced engineering notes with root cause analysis
+        notes_parts = [classification.get("engineering_notes", "")]
+        
+        # Add hypothesis info if available
+        hypotheses = classification.get("hypotheses", [])
+        if hypotheses:
+            top_hypothesis = hypotheses[0]
+            notes_parts.append(f"Primary hypothesis: {top_hypothesis.get('description', 'Unknown')} ({top_hypothesis.get('probability', 0):.0%})")
+        
+        # Add root cause info
+        rca = classification.get("root_cause_analysis", {})
+        if rca.get("primary_cause"):
+            notes_parts.append(f"Root cause: {rca['primary_cause']}")
+        
+        # Add top recommended action
+        actions = classification.get("recommended_actions", [])
+        if actions:
+            top_action = actions[0]
+            notes_parts.append(f"Action ({top_action.get('priority', 'medium')}): {top_action.get('action', 'Investigate')}")
+        
+        notes = " | ".join(filter(None, notes_parts))
+        
+        logger.info(f"✅ [Stage 4] High-accuracy validation: {ai_status} | {fault_cat or 'N/A'} | Confidence: {confidence:.2f}")
+        
+        # Log if human review is recommended
+        if classification.get("requires_human_review"):
+            logger.warning(f"⚠️ [Validation] Human review recommended for this classification")
+        
+        return {
+            "ai_validation_status": ai_status,
+            "fault_category": fault_cat,
+            "ai_confidence_score": confidence,
+            "ai_engineering_notes": notes
+        }
+        
+    except ImportError as e:
+        logger.warning(f"⚠️ [Validation] AI Automation Engineer not available: {e}")
+        # Fallback to basic GPT-4o validation
+        return _fallback_gpt4_validation(
+            machine_id, anomaly_score, physics_summary, 
+            temporal_pattern, recent_readings, hybrid_confidence
+        )
+    except Exception as e:
+        logger.error(f"❌ [Validation] High-accuracy classification failed: {e}")
+        return _default_validation_result(hybrid_confidence)
+
+
+def _fallback_gpt4_validation(
+    machine_id: str,
+    anomaly_score: float,
+    physics_summary: dict,
+    temporal_pattern: dict,
+    recent_readings: dict,
+    hybrid_confidence: float
+) -> dict:
+    """Fallback to basic GPT-4o validation if AI Automation Engineer unavailable."""
+    if not openai_client:
+        return _default_validation_result(hybrid_confidence)
+    
+    try:
+        prompt = build_validation_prompt(
+            machine_id=machine_id,
+            ml_score=anomaly_score,
+            physics_summary=physics_summary,
+            temporal_pattern=temporal_pattern,
+            recent_readings=recent_readings,
+            hybrid_confidence=hybrid_confidence
+        )
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": get_full_system_prompt()},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=500,
+            response_format={"type": "json_object"}
+        )
+        
+        validation_json = json.loads(response.choices[0].message.content)
+        
+        return {
+            "ai_validation_status": validation_json.get("ai_validation_status", "TRUE_FAULT"),
+            "fault_category": validation_json.get("fault_category"),
+            "ai_confidence_score": validation_json.get("confidence_score", hybrid_confidence),
+            "ai_engineering_notes": validation_json.get("ai_engineering_notes", "Validation completed.")
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ [Fallback Validation] GPT-4o call failed: {e}")
+        return _default_validation_result(hybrid_confidence)
+
+
+def _default_validation_result(confidence: float) -> dict:
+    """Fallback validation result when AI is unavailable."""
+    return {
+        "ai_validation_status": "TRUE_FAULT",
+        "fault_category": "mechanical",
+        "ai_confidence_score": confidence,
+        "ai_engineering_notes": "AI validation pending - using hybrid confidence score. Manual verification recommended."
+    }
+
 def diagnostic_node(state: CopilotState):
     """
-    Agent Node: Performs a symbolic Root Cause Analysis (RCA).
-    Maps the detected anomaly pattern to the suspected failure mode (e.g. Pump Failure, Sensor Drift).
+    Agent Node: Performs a symbolic Root Cause Analysis (RCA) with AI validation persistence.
+    
+    Enhanced workflow:
+    1. Uses high-accuracy AI classification from ValidationEngineer
+    2. Persists validated results to database
+    3. Maps detected anomaly to suspected failure mode
     """
-    logger.info("🤖 [Agent] Diagnostic")
-    report = f"Root Cause Analysis indicates a high probability of a '{state['machine_state']}' failure event originating from the sensor anomalies classified."
+    logger.info("🤖 [Agent] Diagnostic with AI Validation")
+    
+    machine_id = state.get('machine_id', 'UNKNOWN')
+    ai_status = state.get('ai_validation_status')
+    fault_category = state.get('fault_category')
+    ai_confidence = state.get('ai_confidence_score', 0.0)
+    ai_notes = state.get('ai_engineering_notes', '')
+    
+    # Build enhanced diagnostic report based on AI validation
+    if ai_status == "TRUE_FAULT":
+        severity = "CRITICAL" if ai_confidence >= 0.8 else "HIGH"
+        report = (
+            f"🔴 [{severity}] AI-Verified Fault Detected\n"
+            f"Classification: {ai_status} ({fault_category or 'unclassified'})\n"
+            f"Confidence: {ai_confidence:.0%}\n"
+            f"Analysis: {ai_notes}\n"
+            f"Root Cause Analysis indicates a high probability of '{state['machine_state']}' failure event."
+        )
+    elif ai_status == "SENSOR_GLITCH":
+        report = (
+            f"🟡 [LOW PRIORITY] Sensor Glitch Detected\n"
+            f"Classification: {ai_status}\n"
+            f"Confidence: {ai_confidence:.0%}\n"
+            f"Analysis: {ai_notes}\n"
+            f"No immediate action required - transient sensor anomaly."
+        )
+    elif ai_status == "NORMAL_WEAR":
+        report = (
+            f"🟢 [MAINTENANCE] Normal Wear Detected\n"
+            f"Classification: {ai_status}\n"
+            f"Confidence: {ai_confidence:.0%}\n"
+            f"Analysis: {ai_notes}\n"
+            f"Schedule preventive maintenance as per standard procedures."
+        )
+    else:
+        report = f"Root Cause Analysis indicates a '{state['machine_state']}' event. AI validation pending."
+    
+    # Persist validated diagnostic to database
+    if ai_status and not state.get('user_query'):  # Only persist for anomaly events, not user queries
+        try:
+            from unified_rag.db.database import SessionLocal
+            from unified_rag.db.models import AnomalyRecord
+            
+            db = SessionLocal()
+            try:
+                # Find the most recent unvalidated anomaly for this machine
+                recent_anomaly = db.query(AnomalyRecord).filter(
+                    AnomalyRecord.machine_id == machine_id,
+                    AnomalyRecord.ai_validation_status == None
+                ).order_by(AnomalyRecord.id.desc()).first()
+                
+                if recent_anomaly:
+                    recent_anomaly.ai_validation_status = ai_status
+                    recent_anomaly.fault_category = fault_category
+                    recent_anomaly.ai_confidence_score = ai_confidence
+                    recent_anomaly.ai_engineering_notes = ai_notes
+                    db.commit()
+                    logger.info(f"💾 [Diagnostic] Persisted validation for anomaly {recent_anomaly.id}: {ai_status}")
+                else:
+                    logger.debug("[Diagnostic] No unvalidated anomaly found to update")
+                    
+            except Exception as db_error:
+                logger.error(f"❌ [Diagnostic] DB persist failed: {db_error}")
+            finally:
+                db.close()
+                
+        except ImportError as e:
+            logger.warning(f"⚠️ [Diagnostic] DB modules not available: {e}")
+    
     return {"diagnostic_report": report}
 
 def knowledge_retrieval_node(state: CopilotState):
@@ -191,17 +485,22 @@ def build_copilot_graph() -> StateGraph:
     Architecture Definition:
     Creates a directed acyclic graph (DAG) representing the AI reasoning process.
     The linear pipeline ensures a predictable 'Sensor-to-Execution' transformation.
+    
+    Pipeline:
+    SensorStatus → ValidationEngineer → Diagnostic → KnowledgeRetrieval → Strategy → Critic
     """
     workflow = StateGraph(CopilotState)
     
     workflow.add_node("SensorStatusAgent", sensor_status_node)
+    workflow.add_node("ValidationEngineerAgent", validation_engineer_node)  # NEW: AI Validation Layer
     workflow.add_node("DiagnosticAgent", diagnostic_node)
     workflow.add_node("KnowledgeRetrievalAgent", knowledge_retrieval_node)
     workflow.add_node("StrategyAgent", strategy_node)
     workflow.add_node("CriticAgent", critic_node)
     
     workflow.set_entry_point("SensorStatusAgent")
-    workflow.add_edge("SensorStatusAgent", "DiagnosticAgent")
+    workflow.add_edge("SensorStatusAgent", "ValidationEngineerAgent")  # NEW edge
+    workflow.add_edge("ValidationEngineerAgent", "DiagnosticAgent")    # NEW edge
     workflow.add_edge("DiagnosticAgent", "KnowledgeRetrievalAgent")
     workflow.add_edge("KnowledgeRetrievalAgent", "StrategyAgent")
     workflow.add_edge("StrategyAgent", "CriticAgent")

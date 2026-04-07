@@ -4,12 +4,15 @@ datasheet_parser.py — AI-powered sensor datasheet analyzer.
 Extracts comprehensive sensor parameters from PDF datasheets using GPT-4o.
 Output includes realistic operating ranges, fault thresholds, units, and
 an icon classification for the dashboard UI.
+
+Now integrated with AI Automation Engineer for validation.
 """
 import fitz
-import openai
 import json
 import logging
 from typing import Dict, Any
+from openai import OpenAI
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,8 @@ VALID_ICON_TYPES = {
 
 class DatasheetParser:
     def __init__(self, api_key: str):
-        openai.api_key = api_key
+        self.client = OpenAI(api_key=api_key)
+        self.api_key = api_key
 
     def parse_pdf(self, pdf_bytes: bytes) -> str:
         """Extract text content from raw PDF bytes."""
@@ -40,6 +44,7 @@ class DatasheetParser:
     def extract_sensor_config(self, sensor_name: str, sensor_id: str, datasheet_text: str) -> Dict[str, Any]:
         """
         Use OpenAI GPT-4o to extract a comprehensive sensor configuration from datasheet text.
+        Now includes AI Automation Engineer validation.
         
         Returns a dict with:
         - sensor_id, sensor_name, unit
@@ -51,6 +56,7 @@ class DatasheetParser:
         - fault_low: value that clearly indicates a LOW-side fault (None if not applicable)
         - fault_direction: "high" | "low" | "both"
         - icon_type: one of the canonical icon types
+        - ai_validation: validation results from AI Engineer
         """
         prompt = f"""You are a senior industrial instrumentation engineer.
 Analyze the datasheet below for sensor: '{sensor_name}' (ID: '{sensor_id}').
@@ -85,7 +91,7 @@ Datasheet text (first 5000 chars):
 {datasheet_text[:5000] if datasheet_text.strip() else "[No datasheet provided — use sensor name only for estimation]"}
 """
         try:
-            res = openai.chat.completions.create(
+            res = self.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
@@ -118,6 +124,32 @@ Datasheet text (first 5000 chars):
                 "fault_direction": str(data.get("fault_direction", "high")),
                 "icon_type":       icon_type,
             }
+            
+            # AI Automation Engineer Validation
+            try:
+                from agents.ai_automation_engineer import AIAutomationEngineerAgent
+                ai_engineer = AIAutomationEngineerAgent(self.api_key)
+                validation = ai_engineer.validate_sensor_config(config, datasheet_text)
+                
+                if validation.get("is_valid") and validation.get("validated_config"):
+                    # Apply AI corrections if any
+                    validated = validation.get("validated_config", {})
+                    for key in ["mu", "sigma", "min_normal", "max_normal", "fault_high", "fault_low"]:
+                        if key in validated and validated[key] is not None:
+                            config[key] = validated[key]
+                
+                config["ai_validation"] = {
+                    "is_valid": validation.get("is_valid", True),
+                    "confidence": validation.get("confidence", 0.5),
+                    "issues": validation.get("issues", []),
+                    "engineering_notes": validation.get("engineering_notes", "")
+                }
+                logger.info(f"✅ AI Validation for '{sensor_name}': valid={validation.get('is_valid')}, confidence={validation.get('confidence', 0):.2f}")
+                
+            except Exception as val_error:
+                logger.warning(f"⚠️ AI validation skipped: {val_error}")
+                config["ai_validation"] = {"is_valid": True, "confidence": 0.5, "issues": ["Validation skipped"]}
+            
             logger.info(f"✅ Parsed config for '{sensor_name}': mu={mu}, sigma={sigma:.3f}, icon={icon_type}")
             return config
 
@@ -166,4 +198,5 @@ Datasheet text (first 5000 chars):
             "fault_low": None,
             "fault_direction": "high",
             "icon_type": icon_type,
+            "ai_validation": {"is_valid": False, "confidence": 0.0, "issues": ["Fallback config used"]}
         }

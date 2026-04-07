@@ -63,7 +63,8 @@ import {
   clarifyStep,
   submitAdaptiveStepResponse,
   forceAdvanceStep,
-  sendStepMessage
+  sendStepMessage,
+  clearResolveState
 } from '../store/slices/copilotSlice';
 import { fetchMachines, setCurrentMachineId, fetchMachineConfig } from '../store/slices/machineSlice';
 import { fetchSimulatorStatus, startSimulator, stopSimulator } from '../store/slices/simulatorSlice';
@@ -118,7 +119,9 @@ export default function IndustrialCopilotDashboard() {
       activeProcedure, 
       isAssistantOpen,
       activeAssistantSessionId,
-      assistantMachineId
+      assistantMachineId,
+      resolveValidation,
+      resolveThankYouMessage
   } = useSelector((state: RootState) => state.copilot);
   const { machines, currentMachineId, machineConfigs } = useSelector((state: RootState) => state.machines);
   const { activeSimulators } = useSelector((state: RootState) => state.simulator);
@@ -249,12 +252,28 @@ export default function IndustrialCopilotDashboard() {
 
   const handleResolve = async () => {
     if (!activeAnomaly || !operatorFix) return;
-    await dispatch(resolveAnomaly({ 
+    const result = await dispatch(resolveAnomaly({ 
         anomalyId: activeAnomaly.id, 
         operator_fix: operatorFix 
     }));
+    
+    // Only close modal and reset if successful (not validation failure)
+    if (resolveAnomaly.fulfilled.match(result)) {
+      // Don't close modal yet - show thank you message
+      // The modal will show the thank you state
+    }
+    // If rejected due to validation, modal stays open with error shown
+  };
+  
+  const handleCloseResolveModal = () => {
     setIsResolveModalOpen(false);
     setOperatorFix('');
+    dispatch(clearResolveState());
+  };
+  
+  const handleOpenAssistantFromResolve = () => {
+    handleCloseResolveModal();
+    dispatch(setAssistantOpen(true));
   };
 
   const handleStepResponse = (stepId: string, status: string, stepText?: string) => {
@@ -968,36 +987,98 @@ export default function IndustrialCopilotDashboard() {
       {isResolveModalOpen && (
         <div className="fixed inset-0 bg-transparent backdrop-blur-xl z-[60] flex items-center justify-center p-4">
            <div className="bg-slate-900/40 backdrop-blur-2xl border border-slate-800 rounded-[3rem] p-10 max-w-lg w-full shadow-4xl animate-in zoom-in-95 duration-300">
-              <div className="h-16 w-16 bg-emerald-600/20 text-emerald-500 rounded-3xl flex items-center justify-center mb-6">
-                 <CheckCircle size={32} />
-              </div>
-              <h2 className="text-2xl font-black text-white mb-2">Finalize Diagnostic</h2>
-              <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                Briefly describe the **actual manual actions** taken on the machine. This will be vectorized into the AI knowledge base for future troubleshooting.
-              </p>
               
-              <textarea 
-                className="w-full bg-[#0a0f1e] border border-slate-800 rounded-3xl p-6 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[150px] mb-8"
-                placeholder="e.g. Manually bled the hydraulic lines and replaced the leaking filter at ACV-102. Thermal integrity restored."
-                value={operatorFix}
-                onChange={(e) => setOperatorFix(e.target.value)}
-              />
+              {/* SUCCESS STATE - Thank You Message */}
+              {resolveThankYouMessage ? (
+                <>
+                  <div className="h-16 w-16 bg-emerald-600/20 text-emerald-500 rounded-3xl flex items-center justify-center mb-6 mx-auto">
+                     <CheckCircle size={32} />
+                  </div>
+                  <div className="prose prose-invert prose-sm max-w-none mb-8">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {resolveThankYouMessage}
+                    </ReactMarkdown>
+                  </div>
+                  <div className="flex gap-4">
+                     <button 
+                        onClick={handleCloseResolveModal}
+                        className="flex-1 px-6 py-4 rounded-2xl bg-emerald-600 text-white font-black hover:bg-emerald-500 transition-all text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20"
+                     >
+                        Done
+                     </button>
+                     <button 
+                        onClick={handleOpenAssistantFromResolve}
+                        className="flex-1 px-6 py-4 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-500 transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+                     >
+                        <MessageCircle size={16} /> Open Assistant
+                     </button>
+                  </div>
+                </>
+              ) : (
+                /* INPUT STATE - Feedback Form */
+                <>
+                  <div className="h-16 w-16 bg-emerald-600/20 text-emerald-500 rounded-3xl flex items-center justify-center mb-6">
+                     <CheckCircle size={32} />
+                  </div>
+                  <h2 className="text-2xl font-black text-white mb-2">Finalize Diagnostic</h2>
+                  <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                    Briefly describe the **actual manual actions** taken on the machine. This will be vectorized into the AI knowledge base for future troubleshooting.
+                  </p>
+                  
+                  {/* Validation Error Display */}
+                  {resolveValidation?.validationError && (
+                    <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="text-amber-500 flex-shrink-0 mt-0.5" size={18} />
+                        <div>
+                          <p className="text-amber-400 text-sm font-medium mb-2">{resolveValidation.validationError}</p>
+                          {resolveValidation.suggestions?.length > 0 && (
+                            <ul className="text-amber-300/70 text-xs space-y-1">
+                              {resolveValidation.suggestions.map((s, i) => (
+                                <li key={i}>• {s}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <textarea 
+                    className={`w-full bg-[#0a0f1e] border rounded-3xl p-6 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[150px] mb-6 ${
+                      resolveValidation?.validationError ? 'border-amber-500/50' : 'border-slate-800'
+                    }`}
+                    placeholder="e.g. Manually bled the hydraulic lines and replaced the leaking filter at ACV-102. Thermal integrity restored."
+                    value={operatorFix}
+                    onChange={(e) => setOperatorFix(e.target.value)}
+                    disabled={resolveValidation?.isValidating}
+                  />
 
-              <div className="flex gap-4">
-                 <button 
-                    onClick={() => setIsResolveModalOpen(false)}
-                    className="flex-1 px-6 py-4 rounded-2xl bg-slate-800 text-slate-400 font-bold hover:text-white transition-all text-xs uppercase tracking-widest"
-                 >
-                    Cancel
-                 </button>
-                 <button 
-                    onClick={handleResolve}
-                    disabled={!operatorFix.trim()}
-                    className="flex-[2] px-6 py-4 rounded-2xl bg-emerald-600 text-white font-black hover:bg-emerald-500 transition-all text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 disabled:opacity-30"
-                 >
-                    Archive Incident
-                 </button>
-              </div>
+                  <div className="flex gap-4">
+                     <button 
+                        onClick={handleCloseResolveModal}
+                        disabled={resolveValidation?.isValidating}
+                        className="flex-1 px-6 py-4 rounded-2xl bg-slate-800 text-slate-400 font-bold hover:text-white transition-all text-xs uppercase tracking-widest disabled:opacity-50"
+                     >
+                        Cancel
+                     </button>
+                     <button 
+                        onClick={handleResolve}
+                        disabled={!operatorFix.trim() || resolveValidation?.isValidating}
+                        className="flex-[2] px-6 py-4 rounded-2xl bg-emerald-600 text-white font-black hover:bg-emerald-500 transition-all text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 disabled:opacity-30 flex items-center justify-center gap-2"
+                     >
+                        {resolveValidation?.isValidating ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                            Validating...
+                          </>
+                        ) : (
+                          'Archive Incident'
+                        )}
+                     </button>
+                  </div>
+                </>
+              )}
            </div>
         </div>
       )}

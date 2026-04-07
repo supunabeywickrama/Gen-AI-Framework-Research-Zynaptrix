@@ -116,6 +116,13 @@ interface CopilotState {
   isAssistantOpen: boolean;
   isAssistantSidebarOpen: boolean;
   assistantMachineId: string | null;
+  // Feedback validation state
+  resolveValidation: {
+    isValidating: boolean;
+    validationError: string | null;
+    suggestions: string[];
+  } | null;
+  resolveThankYouMessage: string | null;
 }
 
 const initialState: CopilotState = {
@@ -138,6 +145,8 @@ const initialState: CopilotState = {
   isAssistantOpen: false,
   isAssistantSidebarOpen: true,
   assistantMachineId: null,
+  resolveValidation: null,
+  resolveThankYouMessage: null,
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -198,14 +207,25 @@ export const fetchChatHistory = createAsyncThunk(
 
 export const resolveAnomaly = createAsyncThunk(
   'copilot/resolve',
-  async (payload: { anomalyId: number; operator_fix: string }) => {
+  async (payload: { anomalyId: number; operator_fix: string }, { rejectWithValue }) => {
     const response = await fetch(`${API_BASE}/api/chat-history/${payload.anomalyId}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ operator_fix: payload.operator_fix }),
     });
+    const data = await response.json();
+    
+    // Handle validation failure (not a network error, but validation didn't pass)
+    if (data.status === 'validation_failed') {
+      return rejectWithValue({
+        type: 'validation_failed',
+        message: data.message,
+        suggestions: data.suggestions || []
+      });
+    }
+    
     if (!response.ok) throw new Error('Failed to resolve incident');
-    return { anomalyId: payload.anomalyId, data: await response.json() };
+    return { anomalyId: payload.anomalyId, data };
   }
 );
 
@@ -513,6 +533,10 @@ const copilotSlice = createSlice({
     setAssistantMachineId: (state, action: PayloadAction<string | null>) => {
       state.assistantMachineId = action.payload;
     },
+    clearResolveState: (state) => {
+      state.resolveValidation = null;
+      state.resolveThankYouMessage = null;
+    },
 
     // === NEW: Step-by-step procedure interaction ===
     respondToStep(state, action: PayloadAction<{ targetId: string; stepId: string; status: string; comment?: string }>) {
@@ -735,8 +759,26 @@ const copilotSlice = createSlice({
     });
     
     // Resolution Logic
+    builder.addCase(resolveAnomaly.pending, (state) => {
+        state.resolveValidation = {
+            isValidating: true,
+            validationError: null,
+            suggestions: []
+        };
+        state.resolveThankYouMessage = null;
+    });
+    
     builder.addCase(resolveAnomaly.fulfilled, (state, action) => {
-        const { anomalyId } = action.meta.arg;
+        const { anomalyId, data } = action.payload;
+        
+        // Store thank you message if available
+        if (data.thank_you_message) {
+            state.resolveThankYouMessage = data.thank_you_message;
+        }
+        
+        // Clear validation state
+        state.resolveValidation = null;
+        
         if (state.activeAnomaly?.id === anomalyId) {
           state.activeAnomaly = null;
         }
@@ -750,7 +792,27 @@ const copilotSlice = createSlice({
         // Cleanup local transient state
         delete state.chatHistory[anomalyId.toString()];
         delete state.activeProcedure[anomalyId.toString()];
-    })
+    });
+    
+    builder.addCase(resolveAnomaly.rejected, (state, action) => {
+        const payload = action.payload as { type: string; message: string; suggestions: string[] } | undefined;
+        
+        if (payload?.type === 'validation_failed') {
+            // Feedback validation failed - show error and suggestions
+            state.resolveValidation = {
+                isValidating: false,
+                validationError: payload.message,
+                suggestions: payload.suggestions || []
+            };
+        } else {
+            // Other error
+            state.resolveValidation = {
+                isValidating: false,
+                validationError: 'Failed to archive incident. Please try again.',
+                suggestions: []
+            };
+        }
+    });
 
     // --- Assistant Session Handlers ---
     builder.addCase(fetchAssistantSessions.fulfilled, (state, action) => {
@@ -1068,7 +1130,8 @@ export const {
   setAssistantMachineId,
   setActiveAgents,
   respondToStep,
-  forceAdvanceStep
+  forceAdvanceStep,
+  clearResolveState
 } = copilotSlice.actions;
 
 export default copilotSlice.reducer;
