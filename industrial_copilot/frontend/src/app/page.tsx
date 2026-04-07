@@ -6,7 +6,7 @@ import {
   Activity, 
   AlertTriangle, 
   CheckCircle, 
-  ChevronRight, 
+  ChevronRight,
   Database, 
   Gauge, 
   MessageSquare, 
