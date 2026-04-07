@@ -48,12 +48,15 @@ industrial_copilot/
 └── frontend/
     ├── src/
     │   ├── app/
-    │   │   ├── page.tsx          # ✨ Dashboard with AI validation status & feedback modal
+    │   │   ├── page.tsx          # ✨ Dashboard with AI validation status & PDF export
     │   │   └── machines/
     │   │       └── page.tsx      # Machine registry with dynamic sensor form + PDF upload
+    │   ├── components/
+    │   │   └── ExportProgressModal.tsx  # ✨ NEW: PDF export progress UI
+    │   ├── professionalReportService.ts # ✨ NEW: jsPDF report generator
     │   └── store/
     │       └── slices/
-    │           ├── copilotSlice.ts   # ✨ Updated: AI validation state, thank you messages
+    │           ├── copilotSlice.ts   # ✨ Updated: PDF export state & thunk
     │           ├── machineSlice.ts   # SensorMeta[], fetchMachineConfig thunk
     │           └── simulatorSlice.ts # Start/stop simulator per machine
     └── package.json
@@ -62,6 +65,40 @@ industrial_copilot/
 ---
 
 ## ✨ New Features (April 2026)
+
+### 📄 Professional PDF Export
+Export diagnostic conversations as professional maintenance reports:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  DIAGNOSTIC REPORT                              ZYNAPTRIX   │
+├─────────────────────────────────────────────────────────────┤
+│  Report ID: #123    Machine: PUMP-001    Status: COMPLETE   │
+├─────────────────────────────────────────────────────────────┤
+│  ▌ PROBLEM DESCRIPTION                                      │
+│    AI-extracted problem summary from conversation           │
+├─────────────────────────────────────────────────────────────┤
+│  ▌ DIAGNOSIS                                                │
+│    Root cause analysis with technical details               │
+├─────────────────────────────────────────────────────────────┤
+│  ▌ SOLUTION / REPAIR PROCEDURE                              │
+│    ① Step 1: Disconnect power                              │
+│    ② Step 2: Inspect components                            │
+│    ③ Step 3: Replace faulty parts                          │
+├─────────────────────────────────────────────────────────────┤
+│  ▌ REFERENCE DIAGRAMS                                       │
+│    [Images from manual pages]                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Features:**
+- AI-powered content extraction using GPT-4o-mini
+- Professional Zynaptrix branding and watermark
+- Structured sections: Problem, Diagnosis, Solution Steps, Images
+- Auto-download with timestamped filename
+- Progress modal during generation
+
+See [`Docs/PDF_EXPORT_FEATURE.md`](../Docs/PDF_EXPORT_FEATURE.md) for detailed documentation.
 
 ### 🧠 AI Validation Layer
 High-accuracy anomaly classification using a 4-stage validation pipeline:
@@ -225,6 +262,7 @@ WebSocket broadcast to Dashboard
 | `WS`   | `/ws/telemetry` | WebSocket stream for live dashboard |
 | `POST` | `/api/copilot/invoke` | Trigger AI copilot diagnosis |
 | `POST` | `/api/chat-history/{id}/resolve` | ✨ Archive incident with AI-validated feedback |
+| `GET`  | `/api/assistant/sessions/{id}/report` | ✨ Generate PDF report data |
 | `POST` | `/api/simulator/start` | Start simulator for machine |
 | `POST` | `/api/simulator/stop` | Stop simulator for machine |
 | `GET`  | `/api/simulator/status` | List running simulators |
@@ -304,6 +342,11 @@ CREATE TABLE anomaly_records (
 ## 📋 Changelog
 
 ### April 7, 2026
+- ✨ **NEW: Professional PDF Export** for Central Assistant conversations
+  - AI-powered content extraction (problem, diagnosis, steps)
+  - Zynaptrix branding with watermark
+  - Reference diagram embedding
+  - Progress modal during generation
 - ✨ Added AI Validation Layer with 4-stage pipeline
 - ✨ Added AI Automation Engineer Agent
 - ✨ Added AI-validated feedback system for incident archival
@@ -313,6 +356,7 @@ CREATE TABLE anomaly_records (
 - ✨ Added physics-based sensor config validation
 
 See `CHANGELOG-2026-04-07.md` for detailed implementation notes.
+See `Docs/PDF_EXPORT_FEATURE.md` for PDF export documentation.
 
 ---
 
