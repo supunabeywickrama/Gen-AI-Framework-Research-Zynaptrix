@@ -292,8 +292,13 @@ async def async_broadcast_anomaly(result):
 
 
 def on_anomaly_callback(alert: dict):
+    """
+    Callback when anomaly is detected. Creates AnomalyRecord and runs AI validation.
+    """
     state = "machine_fault" if alert.get("severity") == "HIGH" else "machine_warning"
     machine_id = alert.get("machine_id", "PUMP-001")
+    sensor_readings = alert.get("sensor_readings", {})
+    anomaly_score = alert.get("reconstruction_score", 0.1)
 
     db = SessionLocal()
     try:
@@ -301,20 +306,102 @@ def on_anomaly_callback(alert: dict):
             machine_id=machine_id,
             timestamp=alert.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             type=state,
-            score=int(alert.get("reconstruction_score", 0.1) * 100),
-            sensor_data=json.dumps(alert.get("sensor_readings", {}))
+            score=int(anomaly_score * 100),
+            sensor_data=json.dumps(sensor_readings)
         )
         db.add(record)
         db.commit()
         db.refresh(record)
+        
+        # AI Validation Layer: Run validation and persist results
+        try:
+            from services.sensor_config_loader import sensor_config_loader
+            from services.anomaly_service import TemporalAnalyzer, calculate_hybrid_confidence
+            from agents.validation_prompts import build_validation_prompt, get_full_system_prompt
+            from openai import OpenAI
+            from unified_rag.config import settings
+            
+            # Get physics violations
+            physics_summary = sensor_config_loader.get_violation_summary(machine_id, sensor_readings)
+            
+            # Simplified temporal pattern for real-time callback
+            temporal_pattern = {
+                "is_spike": False,
+                "is_sustained": True,
+                "anomaly_count": 1,
+                "trend": "stable",
+                "max_rate_of_change": 0.0,
+                "suspicious_sensors": []
+            }
+            
+            # Calculate hybrid confidence
+            hybrid_confidence = calculate_hybrid_confidence(
+                anomaly_score, physics_summary, temporal_pattern
+            )
+            
+            # Auto-classify obvious low-confidence cases
+            if hybrid_confidence < 0.2:
+                record.ai_validation_status = "SENSOR_GLITCH"
+                record.fault_category = None
+                record.ai_confidence_score = 0.85
+                record.ai_engineering_notes = "Low hybrid confidence indicates transient noise. No action required."
+                db.commit()
+                logging.info(f"⚡ [Validation] Auto-classified anomaly {record.id} as SENSOR_GLITCH")
+            else:
+                # Call GPT-4o for intelligent validation
+                openai_client = OpenAI(api_key=settings.openai_api_key)
+                
+                prompt = build_validation_prompt(
+                    machine_id=machine_id,
+                    ml_score=anomaly_score,
+                    physics_summary=physics_summary,
+                    temporal_pattern=temporal_pattern,
+                    recent_readings=sensor_readings,
+                    hybrid_confidence=hybrid_confidence
+                )
+                
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": get_full_system_prompt()},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=500,
+                    response_format={"type": "json_object"}
+                )
+                
+                validation_json = json.loads(response.choices[0].message.content)
+                
+                record.ai_validation_status = validation_json.get("ai_validation_status", "TRUE_FAULT")
+                record.fault_category = validation_json.get("fault_category")
+                record.ai_confidence_score = validation_json.get("confidence_score", hybrid_confidence)
+                record.ai_engineering_notes = validation_json.get("ai_engineering_notes", "Validation completed.")
+                db.commit()
+                
+                logging.info(f"✅ [Validation] Anomaly {record.id}: {record.ai_validation_status} | {record.fault_category or 'N/A'} | Confidence: {record.ai_confidence_score:.2f}")
+                
+        except Exception as validation_error:
+            logging.warning(f"⚠️ [Validation] AI validation failed for anomaly {record.id}: {validation_error}")
+            # Set fallback values
+            record.ai_validation_status = "TRUE_FAULT"
+            record.fault_category = "mechanical"
+            record.ai_confidence_score = anomaly_score
+            record.ai_engineering_notes = "AI validation pending - manual verification recommended."
+            db.commit()
 
         full_alert_data = {
             "id": record.id,
             "machine_id": machine_id,
             "machine_state": state,
-            "anomaly_score": alert.get("reconstruction_score", 0.1),
+            "anomaly_score": anomaly_score,
             "suspect_sensor": alert.get("suspect_sensor"),
-            "recent_readings": alert.get("sensor_readings", {})
+            "recent_readings": sensor_readings,
+            # Include AI validation in broadcast
+            "ai_validation_status": record.ai_validation_status,
+            "fault_category": record.fault_category,
+            "ai_confidence_score": record.ai_confidence_score,
+            "ai_engineering_notes": record.ai_engineering_notes
         }
 
         try:

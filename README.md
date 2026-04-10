@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-Production--Ready-brightgreen" alt="Status">
+  <img src="https://img.shields.io/badge/Status-Dev--Stage-brightgreen" alt="Status">
   <img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License">
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python">
   <img src="https://img.shields.io/badge/Node.js-18+-green" alt="Node.js">
@@ -541,6 +541,8 @@ Services:
 | [Anomaly Detection](./Docs/DETAILED/03_ANOMALY_DETECTION_ENGINE.md) | ML model deep-dive |
 | [Agentic Orchestration](./Docs/DETAILED/04_AGENTIC_ORCHESTRATION.md) | LangGraph pipeline |
 | [Multimodal RAG](./Docs/DETAILED/05_MULTIMODAL_RAG_ENGINE.md) | Vision-augmented retrieval |
+| [RAG Ingestion & HITL](./Docs/RAG_INGESTION_PIPELINE.md) | **[NEW]** Ingestion pipeline & Human-in-the-Loop workflow |
+| [Technical White Paper](./Docs/INDUSTRIAL_COPILOT_WHITE_PAPER.md) | **[NEW]** Research breakthroughs & executive summary |
 
 ---
 
