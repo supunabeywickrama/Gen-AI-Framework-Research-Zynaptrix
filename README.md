@@ -541,6 +541,8 @@ Services:
 | [Anomaly Detection](./Docs/DETAILED/03_ANOMALY_DETECTION_ENGINE.md) | ML model deep-dive |
 | [Agentic Orchestration](./Docs/DETAILED/04_AGENTIC_ORCHESTRATION.md) | LangGraph pipeline |
 | [Multimodal RAG](./Docs/DETAILED/05_MULTIMODAL_RAG_ENGINE.md) | Vision-augmented retrieval |
+| [RAG Ingestion & HITL](./Docs/RAG_INGESTION_PIPELINE.md) | **[NEW]** Ingestion pipeline & Human-in-the-Loop workflow |
+| [Technical White Paper](./Docs/INDUSTRIAL_COPILOT_WHITE_PAPER.md) | **[NEW]** Research breakthroughs & executive summary |
 
 ---
 
