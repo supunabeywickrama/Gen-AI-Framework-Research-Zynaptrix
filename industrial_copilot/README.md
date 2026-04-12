@@ -140,6 +140,14 @@ When operators archive incidents:
 3. Generates personalized thank you message with Central Assistant link
 4. Persists validated results to database for future RAG retrieval
 
+### 📊 Autoencoder Evaluation Pipeline
+Comprehensive evaluation metrics pipeline for the anomaly detection model (Dense & LSTM):
+- Computes 8 key metrics (Precision, Recall, F1, AUC-ROC, FPR, FNR, Threshold, MSE Separation).
+- Automatically evaluates new machines directly after ML training during enrollment.
+- Generates 4 publication-quality visualizations per machine (ROC Curve, Confusion Matrix, MSE Distribution, Threshold Sweep).
+- Accessible via `/api/evaluation/` endpoints.
+- See `docs/evaluation_metrics_implementation.md` for full details.
+
 ---
 
 ## 🚀 Running the System
