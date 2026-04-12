@@ -11,11 +11,13 @@
 ```
 industrial_copilot/
 ├── backend/
-│   ├── api/
-│   │   ├── main_api.py           # FastAPI app, WebSocket, telemetry push, AI validation callback
-│   │   ├── machine_api.py        # Machine registration, PDF parsing, AI-validated feedback
-│   │   ├── assistant_api.py      # Central Assistant API
-│   │   └── copilot_chat_api.py   # Copilot chat & incident resolution
+│   ├── app/
+│   │   ├── main.py               # FastAPI entry point & router orchestration
+│   │   ├── machine_api.py        # Machine registry & PDF parsing
+│   │   ├── assistant_api.py      # Multimodal Assistant (RAG + Images)
+│   │   ├── copilot_api.py        # Diagnostic Copilot & incident resolution
+│   │   ├── simulator_api.py      # Simulator control endpoints
+│   │   └── websockets.py         # Real-time telemetry broadcast
 │   ├── agents/
 │   │   ├── copilot_graph.py      # LangGraph multi-agent workflow with AI validation
 │   │   ├── ai_automation_engineer.py  # ✨ NEW: AI Automation Engineer Agent
@@ -176,7 +178,7 @@ cd industrial_copilot/backend
 python -m venv .venv  # (if not exists)
 .\.venv\Scripts\Activate.ps1      
 pip install -r requirements.txt
-python -m uvicorn api.main_api:app --reload
+uvicorn app.main:app --reload
 ```
 
 ### Start Frontend
@@ -269,12 +271,12 @@ WebSocket broadcast to Dashboard
 | `POST` | `/api/telemetry/push` | Push live sensor reading → WebSocket broadcast |
 | `WS`   | `/ws/telemetry` | WebSocket stream for live dashboard |
 | `POST` | `/api/copilot/invoke` | Trigger AI copilot diagnosis |
-| `POST` | `/api/chat-history/{id}/resolve` | ✨ Archive incident with AI-validated feedback |
+| `POST` | `/api/copilot/chat/resolve` | ✨ Archive incident with AI-validated feedback |
 | `GET`  | `/api/assistant/sessions/{id}/report` | ✨ Generate PDF report data |
 | `POST` | `/api/simulator/start` | Start simulator for machine |
 | `POST` | `/api/simulator/stop` | Stop simulator for machine |
 | `GET`  | `/api/simulator/status` | List running simulators |
-| `POST` | `/api/assistant/chat` | Central Assistant chat |
+| `POST` | `/api/assistant` | ✨ Multimodal Assistant chat |
 
 ---
 
@@ -348,6 +350,17 @@ CREATE TABLE anomaly_records (
 ---
 
 ## 📋 Changelog
+
+### April 13, 2026
+- ✨ **Stabilized Industrial Dashboard**:
+  - Resolved infinite rendering loops using `useMemo` hooks for telemetry state.
+  - Disabled Recharts animations to eliminate layout thrashing during high-frequency data streams.
+- ✨ **Multimodal Assistant Capabilities**:
+  - Enabled technical diagram retrieval and interleaving in the Central Assistant.
+  - Synchronized Assistant rendering with Diagnostic Copilot for a unified UI experience.
+- ✨ **Modular Backend Architecture**:
+  - Refactored monolithic API into clean, modular routers (`assistant`, `copilot`, `machine`, `simulator`).
+  - Resolved 404 errors by aligning frontend API paths with the new routing structure.
 
 ### April 7, 2026
 - ✨ **NEW: Professional PDF Export** for Central Assistant conversations
