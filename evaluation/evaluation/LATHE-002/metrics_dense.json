@@ -1,0 +1,70 @@
+{
+  "machine_id": "LATHE-002",
+  "model_type": "dense",
+  "metrics": {
+    "precision": 0.860041,
+    "recall": 0.706667,
+    "f1_score": 0.775846,
+    "auc_roc": 0.848702,
+    "false_positive_rate": 0.049286,
+    "false_negative_rate": 0.293333,
+    "accuracy": 0.8775,
+    "confusion_matrix": {
+      "true_positive": 4240,
+      "true_negative": 13310,
+      "false_positive": 690,
+      "false_negative": 1760
+    },
+    "per_class_report": {
+      "Normal": {
+        "precision": 0.8832116788321168,
+        "recall": 0.9507142857142857,
+        "f1-score": 0.9157206742346061,
+        "support": 14000.0
+      },
+      "Anomaly": {
+        "precision": 0.8600405679513184,
+        "recall": 0.7066666666666667,
+        "f1-score": 0.7758462946020128,
+        "support": 6000.0
+      },
+      "accuracy": 0.8775,
+      "macro avg": {
+        "precision": 0.8716261233917176,
+        "recall": 0.8286904761904762,
+        "f1-score": 0.8457834844183094,
+        "support": 20000.0
+      },
+      "weighted avg": {
+        "precision": 0.8762603455678772,
+        "recall": 0.8775,
+        "f1-score": 0.8737583603448282,
+        "support": 20000.0
+      }
+    },
+    "total_samples": 20000,
+    "total_anomalies": 6000,
+    "total_normal": 14000,
+    "threshold": 0.720347,
+    "threshold_method": "mean + 2\u03c3 (training normal data)",
+    "mean_mse_normal": 0.219662,
+    "std_mse_normal": 0.249691,
+    "mean_mse_fault": 64.260872,
+    "std_mse_fault": 171.756638,
+    "separation_ratio": 292.5439
+  },
+  "plots": {
+    "roc_curve": "roc_curve_dense.png",
+    "mse_distribution": "mse_distribution_dense.png",
+    "confusion_matrix": "confusion_matrix_dense.png",
+    "threshold_sweep": "threshold_sweep_dense.png"
+  },
+  "evaluated_at": "2026-04-12T04:48:28.001246+00:00",
+  "ground_truth_mapping": {
+    "normal": 0,
+    "machine_fault": 1,
+    "sensor_freeze": 1,
+    "sensor_drift": 1,
+    "idle": 1
+  }
+}

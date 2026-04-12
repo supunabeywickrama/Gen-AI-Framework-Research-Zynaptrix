@@ -23,4 +23,4 @@ COPY . .
 ENV PYTHONPATH=/app
 
 # Command is intended to be overridden by docker-compose
-CMD ["python", "-m", "uvicorn", "api.main_api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

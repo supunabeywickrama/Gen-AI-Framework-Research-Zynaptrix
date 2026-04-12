@@ -36,7 +36,7 @@ python -m venv .venv
 pip install -r requirements.txt
   
 # 4. Run backend API
-uvicorn api.main_api:app
+uvicorn app.main:app
 ```
 *Access API Docs at: http://localhost:8000/docs*
 
@@ -54,7 +54,7 @@ Before using the full system, ensure these artifacts are generated:
 ```bash
 industrial_copilot/backend/
 ├── agents/             # LangGraph orchestrators & tool-specific agents
-├── api/                # FastAPI routes (Telemetry, RAG, Anomaly)
+├── app/                # FastAPI routes (Telemetry, RAG, Anomaly)
 ├── config/             # Environment & Sensor schema settings
 ├── data/               # Persistent storage for manuals and models
 ├── models/             # Autoencoder logic & YOLOv8 weights
