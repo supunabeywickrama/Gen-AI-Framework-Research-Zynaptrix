@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { 
@@ -142,9 +142,37 @@ export default function IndustrialCopilotDashboard() {
   const [stepChatInputs, setStepChatInputs] = useState<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Filter telemetry points for the current machine
-  const filteredTelemetry = telemetry.filter(t => t.machineId === currentMachineId);
-  const latestReading = filteredTelemetry[filteredTelemetry.length - 1] || {};
+  // Filter telemetry points for the current machine - Memoized to prevent unstable references
+  const filteredTelemetry = useMemo(() => 
+    telemetry.filter(t => t.machineId === currentMachineId),
+    [telemetry, currentMachineId]
+  );
+  
+  const latestReading = useMemo(() => 
+    filteredTelemetry[filteredTelemetry.length - 1] || {},
+    [filteredTelemetry]
+  );
+
+  // Build display list: prefer machineConfigs (has icon_type), fall back to live keys - Memoized for stability
+  const displayList = useMemo(() => {
+    const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
+    const liveSensorKeys = Object.keys(latestReading).filter(
+      k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
+    );
+
+    let list: SensorMeta[] = metaList.length > 0
+      ? metaList
+      : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
+
+    if (list.length === 0) {
+      list = [
+        { sensor_id: 'temperature', sensor_name: 'Temperature', icon_type: 'temperature', unit: '°C' },
+        { sensor_id: 'motor_current', sensor_name: 'Motor Current', icon_type: 'current', unit: 'A' },
+        { sensor_id: 'vibration', sensor_name: 'Vibration', icon_type: 'vibration', unit: 'mm/s' },
+      ];
+    }
+    return list;
+  }, [machineConfigs, currentMachineId, latestReading]);
   
   const isSimulating = activeSimulators.includes(currentMachineId);
   const [isMounted, setIsMounted] = useState(false);
@@ -412,26 +440,6 @@ export default function IndustrialCopilotDashboard() {
           
           <div className="grid grid-cols-3 gap-4">
              {(() => {
-                // SensorMeta[] from machineConfigs, or derive from live telemetry, or fallback
-                const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
-                const liveSensorKeys = Object.keys(latestReading).filter(
-                  k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
-                );
-
-                // Build display list: prefer machineConfigs (has icon_type), fall back to live keys
-                let displayList: SensorMeta[] = metaList.length > 0
-                  ? metaList
-                  : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
-
-                // Last resort: defaults
-                if (displayList.length === 0) {
-                  displayList = [
-                    { sensor_id: 'temperature', sensor_name: 'Temperature', icon_type: 'temperature', unit: '°C' },
-                    { sensor_id: 'motor_current', sensor_name: 'Motor Current', icon_type: 'current', unit: 'A' },
-                    { sensor_id: 'vibration', sensor_name: 'Vibration', icon_type: 'vibration', unit: 'mm/s' },
-                  ];
-                }
-
                 const chartColors = ['blue', 'emerald', 'amber', 'purple', 'rose', 'cyan', 'teal', 'orange'];
 
                 return displayList.map((sensor, i) => {
@@ -466,24 +474,17 @@ export default function IndustrialCopilotDashboard() {
                <h2 className="text-xl font-black flex items-center gap-3 text-white">
                  <Activity className="text-blue-500" /> Real-Time Sensor Stream
                </h2>
-               <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500">
-                  {(() => {
-                    const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
-                    const liveSensorKeys = Object.keys(latestReading).filter(
-                      k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
-                    );
-                    const displayList = metaList.length > 0
-                      ? metaList
-                      : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
-                    const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500', 'bg-teal-500', 'bg-orange-500'];
-                    return displayList.map((sensor, i) => (
-                      <span key={sensor.sensor_id} className="flex items-center gap-2">
-                        <div className={`h-1.5 w-4 ${colors[i % colors.length]} rounded`}></div>
-                        {sensor.sensor_name.substring(0, 5).toUpperCase()}
-                      </span>
-                    ));
-                  })()}
-               </div>
+                <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500">
+                   {(() => {
+                     const colors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-rose-500', 'bg-cyan-500', 'bg-teal-500', 'bg-orange-500'];
+                     return displayList.map((sensor, i) => (
+                       <span key={sensor.sensor_id} className="flex items-center gap-2">
+                         <div className={`h-1.5 w-4 ${colors[i % colors.length]} rounded`}></div>
+                         {sensor.sensor_name.substring(0, 5).toUpperCase()}
+                       </span>
+                     ));
+                   })()}
+                </div>
             </div>
             <div className="flex-1 w-full min-h-[300px]">
               {isMounted && (
@@ -496,16 +497,17 @@ export default function IndustrialCopilotDashboard() {
                       contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px' }}
                     />
                     {(() => {
-                       const metaList: SensorMeta[] = machineConfigs[currentMachineId] || [];
-                       const liveSensorKeys = Object.keys(latestReading).filter(
-                         k => !['machineId', 'time', 'machine_id', 'state', 'health_score'].includes(k)
-                       );
-                       const displayList = metaList.length > 0
-                         ? metaList
-                         : liveSensorKeys.map(k => ({ sensor_id: k, sensor_name: k, icon_type: 'generic', unit: 'units' }));
                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#f43f5e', '#06b6d4', '#14b8a6', '#f97316'];
                        return displayList.map((sensor, i) => (
-                         <Line key={sensor.sensor_id} type="monotone" dataKey={sensor.sensor_id} stroke={colors[i % colors.length]} strokeWidth={3} dot={false} animationDuration={300} />
+                         <Line 
+                            key={sensor.sensor_id} 
+                            type="monotone" 
+                            dataKey={sensor.sensor_id} 
+                            stroke={colors[i % colors.length]} 
+                            strokeWidth={3} 
+                            dot={false} 
+                            isAnimationActive={false} // Disable animation for real-time stability
+                         />
                        ));
                     })()}
                   </LineChart>
@@ -871,7 +873,7 @@ export default function IndustrialCopilotDashboard() {
                               )}
                               {displayContent && (
                                 <div className="text-sm leading-relaxed space-y-3 markdown-content">
-                                  {msg.type === 'wizard_step' && msg.stepData?.subphaseTitle ? (
+                                  {(msg.images && msg.images.length > 0) ? (
                                     <div className="markdown-content">
                                       {renderStepContent(displayContent, msg.images)}
                                     </div>

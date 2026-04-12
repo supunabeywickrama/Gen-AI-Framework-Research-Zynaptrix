@@ -543,7 +543,7 @@ export const inquireAssistant = createAsyncThunk(
         targetId: 'assistant' 
     }));
 
-    const response = await fetch(`${API_BASE}/api/copilot/assistant`, {
+    const response = await fetch(`${API_BASE}/api/assistant`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, machine_id: finalMachineId, session_id: sessionId }),
@@ -946,12 +946,22 @@ const copilotSlice = createSlice({
             state.chatHistory['assistant'] = [];
         }
 
+        // Intelligent Type Detection: If it has phases or numbered steps, treat as wizard
+        const isProcedural = content.includes('[PHASE:') || /^\d+\./m.test(content) || (images && images.length > 0);
+        const finalType = isProcedural ? 'wizard_step' : 'text';
+
         state.chatHistory['assistant'].push({
             role: 'agent',
             content,
             timestamp,
-            type: 'text',
-            images,
+            type: finalType,
+            images: images || [],
+            // Ensure stepData is present for wizard types to enable optimized rendering
+            stepData: isProcedural ? {
+                stepId: 'assistant_step',
+                stepText: content.trim(),
+                phaseType: 'diagnostic', phaseTitle: 'Expert Assistance', subphaseTitle: 'Assistant Wisdom', stepIndex: 0, totalSteps: 0
+            } as any : undefined
         });
     });
 
