@@ -118,10 +118,15 @@ class DocumentParser:
                         
                         parent_ctx = f"Figure on Page {page_idx} under section '{current_section}'"
                         print(f"      [Figure] Decomposing composite drawing...")
-                        sub_figures = splitter.split_image_sam(raw_crop, parent_context=parent_ctx)
+                        
+                        try:
+                            sub_figures = splitter.split_image_sam(raw_crop, parent_context=parent_ctx)
+                        except Exception as e:
+                            print(f"      ⚠️ [Parser] Figure decomposition crashed: {e}. Using fallback.")
+                            sub_figures = []
                         
                         if not sub_figures:
-                            # Fallback to simple crop if splitter finds nothing
+                            # Fallback to simple crop if splitter finds nothing or crashes
                             image_filename = f"{manual_id}_p{page_idx}_fig{img_index}.png"
                             image_path = os.path.join(self.output_dir, image_filename)
                             cv2.imwrite(image_path, raw_crop)

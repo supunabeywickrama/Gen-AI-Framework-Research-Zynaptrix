@@ -29,31 +29,59 @@ class FigureSplitter:
     def ask_openai_centers(self, base64_image, parent_context=""):
         """
         Uses GPT-4o to identify semantic centers of distinct sub-diagrams.
+        Includes retries and JSON Mode for maximum reliability.
         """
+        import time
+        
         prompt = (
             "You are an expert technical layout analyzer. Analyze this technical drawing.\n"
             f"Context: {parent_context}\n"
-            "Identify the exact center points of each distinct machine diagram AND any major text blocks (titles, headers).\n"
-            "Return a JSON array of objects:\n"
+            "Identify the exact center points (x,y) of each distinct machine diagram OR major text instruction block.\n"
+            "Return a JSON object with a 'components' key containing a list of objects:\n"
             " - \"x\": normalized x coordinate (0 to 1000)\n"
             " - \"y\": normalized y coordinate (0 to 1000)\n"
-            " - \"is_noise\": boolean (true if text block/title, false if actual machine diagram)\n"
-            " - \"label\": a short 1-3 word descriptive label for this component\n"
-            "DO NOT use markdown."
+            " - \"is_noise\": boolean (true if text/label, false if machine diagram)\n"
+            " - \"label\": short descriptive label\n"
         )
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "high"}}]}],
-                max_tokens=600, temperature=0.0
-            )
-            content = response.choices[0].message.content.strip()
-            if content.startswith("```json"): content = content.replace("```json", "", 1)
-            if content.endswith("```"): content = content[:-3]
-            return json.loads(content.strip())
-        except Exception as e:
-            print(f"❌ [FigureSplitter] OpenAI API Error: {e}")
-            return []
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{
+                        "role": "user", 
+                        "content": [
+                            {"type": "text", "text": prompt}, 
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "high"}}
+                        ]
+                    }],
+                    max_tokens=800,
+                    temperature=0.0,
+                    response_format={"type": "json_object"}
+                )
+                
+                raw_content = response.choices[0].message.content
+                if raw_content is None:
+                    raise ValueError("OpenAI returned None as content")
+                
+                content = raw_content.strip()
+                data = json.loads(content)
+                
+                # Handle both array root and object root with 'components' key
+                if isinstance(data, dict) and "components" in data:
+                    return data["components"]
+                elif isinstance(data, list):
+                    return data
+                return []
+                
+            except Exception as e:
+                print(f"⚠️ [FigureSplitter] OpenAI Attempt {attempt+1} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt) # Exponential backoff
+                else:
+                    print(f"❌ [FigureSplitter] All attempts failed.")
+                    return []
 
     def split_image_sam(self, image, parent_context="", min_area=500):
         """
