@@ -14,8 +14,8 @@
 | 0 | Abstract | ✅ Done | 00_ABSTRACT.md |
 | 1 | Introduction | ✅ Done | 01_INTRODUCTION.md |
 | 2 | Literature Review | ✅ Done | 02_LITERATURE_REVIEW.md |
-| 3 | Methodology | ⬜ Pending | 03_METHODOLOGY.md |
-| 4 | Experiment / System Evaluation | ⬜ Pending | 04_EXPERIMENT.md |
+| 3 | Methodology | ✅ Done | 03_METHODOLOGY.md |
+| 4 | Experiment / System Evaluation | ✅ Done | 04_EXPERIMENT.md |
 | 5 | Discussion | ⬜ Pending | 05_DISCUSSION.md |
 | 6 | References | ⬜ Pending | 06_REFERENCES.md |
 | — | Full Paper (compiled) | ⬜ Pending | FULL_PAPER.md |
