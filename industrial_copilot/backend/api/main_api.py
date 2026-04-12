@@ -536,8 +536,10 @@ async def get_machine_config(machine_id: str):
 # ── Modular Machine Registry ──────────────────────────────────────────────────
 from api.machine_api import router as machine_registry_router
 from api.assistant_api import router as assistant_router
+from api.evaluation_routes import router as evaluation_router
 app.include_router(machine_registry_router)
 app.include_router(assistant_router)
+app.include_router(evaluation_router, prefix="/api/evaluation", tags=["Model Evaluation"])
 
 if __name__ == "__main__":
     import uvicorn

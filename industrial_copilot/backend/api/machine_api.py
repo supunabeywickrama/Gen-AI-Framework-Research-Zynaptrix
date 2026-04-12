@@ -466,6 +466,8 @@ async def register_machine(request: Request, db: Session = Depends(get_db)):
                     subprocess.run(["python", "preprocessing/normalization.py", "--machine_id", machine_id], cwd=backend_dir, check=True)
                     # Train model
                     subprocess.run(["python", "models/train_model.py", "--machine_id", machine_id], cwd=backend_dir, check=True)
+                    # Evaluate model performance (Precision, Recall, F1, AUC, etc.)
+                    subprocess.run(["python", "models/evaluate_model.py", "--machine_id", machine_id, "--model", "both"], cwd=backend_dir, check=True)
                     logger.info(f"✅ Completed ML pipeline for {machine_id}")
                 except Exception as e:
                     logger.error(f"❌ Failed to generate datasets/models for {machine_id}: {e}")
