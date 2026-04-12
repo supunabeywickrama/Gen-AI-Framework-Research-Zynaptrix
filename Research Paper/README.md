@@ -16,6 +16,6 @@
 | 2 | Literature Review | ✅ Done | 02_LITERATURE_REVIEW.md |
 | 3 | Methodology | ✅ Done | 03_METHODOLOGY.md |
 | 4 | Experiment / System Evaluation | ✅ Done | 04_EXPERIMENT.md |
-| 5 | Discussion | ⬜ Pending | 05_DISCUSSION.md |
-| 6 | References | ⬜ Pending | 06_REFERENCES.md |
-| — | Full Paper (compiled) | ⬜ Pending | FULL_PAPER.md |
+| 5 | Discussion | ✅ Done | 05_DISCUSSION.md |
+| 6 | References | ✅ Done | 06_REFERENCES.md |
+| — | Full Paper (compiled) | ✅ Done | FULL_PAPER.md |

@@ -1,7 +1,5 @@
 # VI. REFERENCES
-## Status: [🔄] Building incrementally
-
-*References are added here as each section is written. Final numbering will be confirmed when full paper is compiled.*
+## Status: [✅] Done
 
 ---
 
@@ -18,13 +16,6 @@
 [6] P. Lewis, E. Perez, A. Piktus *et al.*, "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks," in *Adv. Neural Inf. Process. Syst. (NeurIPS)*, vol. 33, pp. 9459–9474, 2020.
 
 [7] LangChain, Inc., "LangGraph: Build Stateful, Multi-Actor Applications with LLMs," GitHub repository, 2024. [Online]. Available: https://github.com/langchain-ai/langgraph. [Accessed: Apr. 2026].
-
----
-*← More references will be added from Literature Review, Methodology, and Experiment sections*
-
----
-
-## From Section II — Literature Review: [8]–[27]
 
 [8] R. K. Mobley, *An Introduction to Predictive Maintenance*, 2nd ed. Butterworth-Heinemann, 2002.
 
@@ -66,13 +57,6 @@
 
 [27] D. Romero *et al.*, "Towards an Operator 4.0 typology: A human-centric perspective on the fourth industrial revolution technologies," in *Proc. Int. Conf. Comput. Ind. Eng.*, 2016.
 
----
-
-## From Section III — Methodology: [28]–[29]
-
 [28] J. Redmon *et al.*, "You Only Look Once: Unified, Real-Time Object Detection," in *Proc. IEEE CVPR*, pp. 779–788, 2016.
 
 [29] B. Pfitzmann, C. Auer, M. Dolfi, A. S. Nassar, and P. Staar, "DocLayNet: A Large Human-Annotated Dataset for Document-Layout Segmentation," in *Proc. ACM KDD*, pp. 3743–3751, 2022.
-
----
-*← More references will be added from Experiment and Discussion sections*
