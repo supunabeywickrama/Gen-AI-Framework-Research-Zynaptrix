@@ -40,11 +40,43 @@ def fit_scaler(df: pd.DataFrame) -> StandardScaler:
     return scaler
 
 def save_scaler(scaler: StandardScaler, machine_id: str = "PUMP-001") -> None:
+    # 1. Save locally first
     path = get_scaler_path(machine_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         pickle.dump(scaler, f)
-    print(f"✓ Scaler saved → {path}")
+    print(f"✓ Scaler saved locally → {path}")
+
+    # 2. Upload to Cloudinary
+    try:
+        from services.cloudinary_service import CloudinaryService
+        from unified_rag.db.database import SessionLocal
+        from unified_rag.db.models import MachineAsset
+        from datetime import datetime
+
+        cloud = CloudinaryService()
+        if cloud.enabled:
+            print(f"☁️ Uploading scaler for {machine_id} to Cloudinary...")
+            url = cloud.upload_file(path, public_id=f"scaler_{machine_id}", folder="industrial_copilot/assets/scalers")
+            
+            if url:
+                # 3. Register in DB
+                db = SessionLocal()
+                try:
+                    asset = db.query(MachineAsset).filter(MachineAsset.machine_id == machine_id, 
+                                                         MachineAsset.asset_type == "scaler").first()
+                    if not asset:
+                        asset = MachineAsset(machine_id=machine_id, asset_type="scaler")
+                        db.add(asset)
+                    
+                    asset.url = url
+                    asset.updated_at = datetime.now().isoformat()
+                    db.commit()
+                    print(f"✅ Scaler registered in DB: {url}")
+                finally:
+                    db.close()
+    except Exception as e:
+        print(f"⚠️ Cloud scaler sync failed: {e}")
 
 def load_scaler(machine_id: str = "PUMP-001") -> StandardScaler:
     path = get_scaler_path(machine_id)

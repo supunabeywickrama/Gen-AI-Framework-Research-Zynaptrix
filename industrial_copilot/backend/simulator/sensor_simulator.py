@@ -39,6 +39,14 @@ logger = logging.getLogger(__name__)
 
 
 # Removed old get_influx_writer function
+from unified_rag.config import settings
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔧 Config & Consts
+# ─────────────────────────────────────────────────────────────────────────────
+# Root API URL for pushing telemetry
+API_BASE_URL = settings.api_url
+TELEMETRY_ENDPOINT = f"{API_BASE_URL}/api/telemetry/push"
 
 
 def pick_state(current_state: str, drift_counter: list) -> str:
@@ -109,9 +117,8 @@ def simulate(machine_id: str = "PUMP-001", interval_seconds: float = 1.0):
                 logger.warning(f"  [{machine_id}] ⚠️ InfluxDB Write Failed (Continuing): {e}")
             
             # Broadcast to UI WebSockets
-            api_url = os.getenv("API_URL", "http://127.0.0.1:8000")
             try:
-                resp = requests.post(f"{api_url}/api/telemetry/push", json=reading, timeout=2)
+                resp = requests.post(TELEMETRY_ENDPOINT, json=reading, timeout=2)
                 if resp.status_code != 200:
                     logger.warning(f"  [{machine_id}] ⚠️ Telemetry push failed (Status {resp.status_code})")
             except Exception as ex:

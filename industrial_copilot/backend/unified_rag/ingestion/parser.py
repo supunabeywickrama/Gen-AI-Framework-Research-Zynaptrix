@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import cv2
 from PIL import Image
+from services.cloudinary_service import CloudinaryService
 
 # Suppress pypdf warnings
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -29,6 +30,7 @@ class DocumentParser:
         self.output_dir = output_dir
         os.makedirs(upload_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
+        self.cloudinary = CloudinaryService()
         
         # Step 1: Initialize Layout Detection (YOLOv8 DocLayNet)
         if YOLO:
@@ -130,8 +132,17 @@ class DocumentParser:
                             image_filename = f"{manual_id}_p{page_idx}_fig{img_index}.png"
                             image_path = os.path.join(self.output_dir, image_filename)
                             cv2.imwrite(image_path, raw_crop)
+                            
+                            # ✨ Cloudinary Upload
+                            final_path = image_path
+                            if self.cloudinary.enabled:
+                                cloud_url = self.cloudinary.upload_image(image_path, f"{manual_id}_p{page_idx}_fig{img_index}")
+                                if cloud_url:
+                                    final_path = cloud_url
+                                    self.cloudinary.delete_local_file(image_path)
+
                             parsed_data.append({
-                                "type": "image", "path": image_path, "page": page_idx,
+                                "type": "image", "path": final_path, "page": page_idx,
                                 "metadata": {"section": current_section, "label": "Main Diagram"}
                             })
                             img_index += 1
@@ -141,8 +152,16 @@ class DocumentParser:
                                 sub_path = os.path.join(self.output_dir, sub_filename)
                                 cv2.imwrite(sub_path, sub["crop"])
                                 
+                                # ✨ Cloudinary Upload
+                                final_sub_path = sub_path
+                                if self.cloudinary.enabled:
+                                    cloud_url = self.cloudinary.upload_image(sub_path, f"{manual_id}_p{page_idx}_sub{img_index}_{i}")
+                                    if cloud_url:
+                                        final_sub_path = cloud_url
+                                        self.cloudinary.delete_local_file(sub_path)
+
                                 parsed_data.append({
-                                    "type": "image", "path": sub_path, "page": page_idx,
+                                    "type": "image", "path": final_sub_path, "page": page_idx,
                                     "metadata": {
                                         "section": current_section, 
                                         "label": sub["label"],

@@ -49,36 +49,80 @@ class AnomalyDetector:
             return self._registry[machine_id]
 
         import tensorflow as tf
-        from preprocessing.normalization import get_scaler_path
+        import requests
+        import tempfile
+        from unified_rag.db.database import SessionLocal
+        from unified_rag.db.models import AnomalyThreshold, MachineAsset
 
-        # Paths
-        model_path = os.path.join(MODEL_DIR, f"autoencoder_{machine_id}.keras")
-        scaler_path = get_scaler_path(machine_id)
-        
-        # Fallback to default if machine-specific doesn't exist yet
-        if not os.path.exists(model_path):
-            log.warning(f"Model not found for {machine_id}, falling back to PUMP-001")
-            model_path = os.path.join(MODEL_DIR, "autoencoder_PUMP-001.keras")
-            scaler_path = get_scaler_path("PUMP-001")
+        db = SessionLocal()
+        try:
+            # 1. Fetch Threshold from DB
+            t_key = f"{machine_id}_{self._threshold_type}"
+            t_record = db.query(AnomalyThreshold).filter(AnomalyThreshold.machine_id == machine_id, 
+                                                        AnomalyThreshold.threshold_type == self._threshold_type).first()
+            if not t_record:
+                log.warning(f"Threshold not found in DB for {t_key}, falling back to PUMP-001")
+                t_record = db.query(AnomalyThreshold).filter(AnomalyThreshold.machine_id == "PUMP-001", 
+                                                            AnomalyThreshold.threshold_type == self._threshold_type).first()
+            
+            # 2. Fetch Assets (Model/Scaler) from DB
+            asset_types = [f"model_{self._threshold_type}", "scaler"]
+            asset_records = db.query(MachineAsset).filter(MachineAsset.machine_id == machine_id, 
+                                                        MachineAsset.asset_type.in_(asset_types)).all()
+            
+            # Map assets
+            assets_meta = {a.asset_type: a.url for a in asset_records}
+            
+            # Fallback to PUMP-001 if machine assets missing
+            if len(assets_meta) < 2:
+                log.warning(f"Assets not found in DB for {machine_id}, falling back to PUMP-001")
+                asset_records = db.query(MachineAsset).filter(MachineAsset.machine_id == "PUMP-001", 
+                                                            MachineAsset.asset_type.in_(asset_types)).all()
+                assets_meta = {a.asset_type: a.url for a in asset_records}
 
-        log.info(f"Loading assets for {machine_id} ...")
-        model = tf.keras.models.load_model(model_path)
-        
-        with open(scaler_path, "rb") as f:
-            scaler = pickle.load(f)
+            # Helper to load from URL or path
+            def load_asset(url_or_path, is_model=True):
+                if url_or_path.startswith("http"):
+                    # Dynamic Cloudinary download
+                    with tempfile.NamedTemporaryFile(suffix=".keras" if is_model else ".pkl", delete=False) as tmp:
+                        r = requests.get(url_or_path)
+                        tmp.write(r.content)
+                        tmp_path = tmp.name
+                    
+                    if is_model:
+                        res = tf.keras.models.load_model(tmp_path)
+                    else:
+                        with open(tmp_path, "rb") as f:
+                            res = pickle.load(f)
+                    
+                    try: os.remove(tmp_path)
+                    except: pass
+                    return res
+                else:
+                    # Legacy local path
+                    if is_model:
+                        return tf.keras.models.load_model(url_or_path)
+                    else:
+                        with open(url_or_path, "rb") as f:
+                            return pickle.load(f)
 
-        with open(THRESHOLD_FILE) as f:
-            thresholds = json.load(f)
-        
-        threshold_key = f"{machine_id}_{self._threshold_type}"
-        if threshold_key not in thresholds:
-            threshold_key = f"PUMP-001_{self._threshold_type}"
-        
-        threshold = thresholds[threshold_key]
+            # 3. Load actual objects
+            model_url = assets_meta.get(f"model_{self._threshold_type}")
+            scaler_url = assets_meta.get("scaler")
+            
+            if not model_url or not scaler_url:
+                raise Exception(f"Failed to find assets (model/scaler) for {machine_id} in cloud registry")
 
-        assets = {"model": model, "scaler": scaler, "threshold": threshold}
-        self._registry[machine_id] = assets
-        return assets
+            log.info(f"Loading cloud assets for {machine_id} ...")
+            model = load_asset(model_url, is_model=True)
+            scaler = load_asset(scaler_url, is_model=False)
+            threshold = t_record.value if t_record else 0.5 
+
+            assets = {"model": model, "scaler": scaler, "threshold": threshold}
+            self._registry[machine_id] = assets
+            return assets
+        finally:
+            db.close()
 
     def _calculate_health(self, score: float, threshold: float) -> int:
         """

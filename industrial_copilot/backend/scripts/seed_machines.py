@@ -1,9 +1,8 @@
-import requests
-import json
-import os
+from unified_rag.config import settings
+import sys
 
 # Base URL for the backend API
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+API_URL = settings.api_url
 
 def seed_machines():
     machines = [

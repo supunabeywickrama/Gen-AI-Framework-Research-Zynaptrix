@@ -94,3 +94,50 @@ class AssistantMessage(Base):
     images = Column(Text, nullable=True) # JSON list
     timestamp = Column(String, nullable=False)
 
+
+class Manual(Base):
+    """Stores metadata for source PDF manuals stored in Cloudinary."""
+    __tablename__ = "manuals"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    manual_id = Column(String, unique=True, index=True, nullable=False)
+    filename = Column(String, nullable=False)
+    url = Column(String, nullable=False) # Cloudinary URL
+    created_at = Column(String, nullable=True)
+
+
+class SensorConfiguration(Base):
+    """Stores machine sensor physics limits (replaces legacy sensor_configs.json)."""
+    __tablename__ = "sensor_configurations"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    machine_id = Column(String, index=True, nullable=False)
+    config_json = Column(Text, nullable=False) # Full JSON dump of the sensor limits
+    updated_at = Column(String, nullable=True)
+
+
+class AnomalyThreshold(Base):
+    """Stores MSE thresholds from training (replaces legacy thresholds.json)."""
+    __tablename__ = "anomaly_thresholds"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    machine_id = Column(String, index=True, nullable=False)
+    threshold_type = Column(String, default="dense") # 'dense' or 'lstm'
+    value = Column(Float, nullable=False)
+    updated_at = Column(String, nullable=True)
+
+
+class MachineAsset(Base):
+    """Tracks Cloudinary URLs for trained AI assets (models and scalers)."""
+    __tablename__ = "machine_assets"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    machine_id = Column(String, index=True, nullable=False)
+    asset_type = Column(String, nullable=False) # 'model_dense', 'model_lstm', 'scaler'
+    url = Column(String, nullable=False) # Cloudinary URL
+    updated_at = Column(String, nullable=True)
+

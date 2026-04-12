@@ -28,7 +28,7 @@ pandas
 numpy
 python-multipart
 python-dotenv
-# cloudinary removed - using local storage
+cloudinary
 Pillow
 matplotlib
 plotly

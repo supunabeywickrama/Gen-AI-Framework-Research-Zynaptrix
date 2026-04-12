@@ -37,6 +37,36 @@ async def ingest_manual(
     print(f"💾 [API] Saving file to: {file_path}")
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    
+    # 🌩️ Cloud Sync (Source PDF)
+    try:
+        from services.cloudinary_service import CloudinaryService
+        from unified_rag.db.database import SessionLocal
+        from unified_rag.db.models import Manual
+        from datetime import datetime
+
+        cloud = CloudinaryService()
+        if cloud.enabled:
+            print(f"☁️ [API] Uploading source PDF for {manual_id} to Cloudinary...")
+            url = cloud.upload_file(file_path, public_id=f"manual_{manual_id}", folder="industrial_copilot/data/manuals")
+            
+            if url:
+                db = SessionLocal()
+                try:
+                    manual_record = db.query(Manual).filter(Manual.manual_id == manual_id).first()
+                    if not manual_record:
+                        manual_record = Manual(manual_id=manual_id)
+                        db.add(manual_record)
+                    manual_record.filename = file.filename
+                    manual_record.url = url
+                    manual_record.created_at = datetime.now().isoformat()
+                    db.commit()
+                    print(f"✅ [API] Manual {manual_id} registered in cloud: {url}")
+                finally:
+                    db.close()
+    except Exception as e:
+        print(f"⚠️ [API] Source PDF cloud sync failed: {e}")
+
     print(f"✅ [API] File saved. Starting ingestion pipeline...")
         
     # Process immediately

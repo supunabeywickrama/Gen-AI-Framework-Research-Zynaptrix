@@ -44,7 +44,34 @@ class SensorConfigLoader:
         self._initialized = True
     
     def _load_configs(self) -> None:
-        """Load sensor configurations from JSON file."""
+        """Load sensor configurations from Postgres database."""
+        try:
+            from unified_rag.db.database import SessionLocal
+            from unified_rag.db.models import SensorConfiguration
+            
+            db = SessionLocal()
+            try:
+                configs = db.query(SensorConfiguration).all()
+                self._configs = {}
+                for c in configs:
+                    try:
+                        self._configs[c.machine_id] = json.loads(c.config_json)
+                    except Exception as je:
+                        logger.error(f"Failed to parse JSON for {c.machine_id}: {je}")
+                
+                if self._configs:
+                    logger.info(f"✅ Loaded sensor configs for {len(self._configs)} machines from DB")
+                else:
+                    # Fallback to local file only if DB is empty
+                    self._load_configs_from_disk()
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"❌ Failed to load sensor configs from DB: {e}")
+            self._load_configs_from_disk()
+
+    def _load_configs_from_disk(self) -> None:
+        """Fallback method to load from local JSON if DB is unavailable."""
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         config_path = os.path.join(base_dir, "data", "processed", "sensor_configs.json")
         
@@ -52,11 +79,11 @@ class SensorConfigLoader:
             if os.path.exists(config_path):
                 with open(config_path, "r") as f:
                     self._configs = json.load(f)
-                logger.info(f"✅ Loaded sensor configs for {len(self._configs)} machines")
+                logger.info(f"💾 Fallback: Loaded sensor configs from disk: {len(self._configs)} machines")
             else:
-                logger.warning(f"⚠️ Sensor config file not found: {config_path}")
+                logger.warning(f"⚠️ No sensor config source found (DB empty, disk missing)")
         except Exception as e:
-            logger.error(f"❌ Failed to load sensor configs: {e}")
+            logger.error(f"❌ Disk fallback failed: {e}")
     
     def get_machine_config(self, machine_id: str) -> Optional[Dict[str, Any]]:
         """Get sensor configuration for a specific machine."""
