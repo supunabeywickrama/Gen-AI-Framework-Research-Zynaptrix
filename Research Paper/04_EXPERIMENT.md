@@ -221,6 +221,23 @@ The system supports five retrieval modes, each optimised for a different operato
 | EVALUATION | Step completion claim | AI-verified pass/fail | Per-step QA validation |
 | PROCEDURE | Structured export | JSON procedure object | Documentation / audit trail |
 
+### 4) RAG Pipeline Evolution
+
+The multimodal RAG pipeline described above was not implemented as a monolithic design. Rather, it evolved through four iterative experimental stages, each addressing a specific retrieval failure mode observed during testing with the TEA_PUR_0001 manual.
+
+**TABLE XII. RAG PIPELINE ITERATIVE EVOLUTION**
+
+| Stage | Approach | Limitation Identified | Resolution |
+|-------|----------|----------------------|------------|
+| **V1: Basic Text RAG** | PyMuPDF full-page text extraction → fixed-size chunking (500 tokens) → OpenAI embedding → pgvector retrieval | Chunks lacked structural context; a chunk from a "Safety Warnings" section was retrieved for a "Motor Replacement" query because both mentioned "disconnect power." Retrieval precision was low for procedural queries. | Introduced structural parsing and section-aware metadata. |
+| **V2: Context-Aware Structural RAG** | YOLOv8 DocLayNet layout detection → section header tracking → metadata-enriched chunking (each chunk tagged with its parent section) → Camelot table extraction | Text retrieval improved significantly, but technical diagrams — which constitute a large proportion of the manual content (wiring diagrams, exploded views, assembly figures) — were entirely absent from retrieval results. Operators received text-only procedures with no visual reference. | Introduced vision captioning for image regions. |
+| **V3: Multimodal Vision-Captioned RAG** | GPT-4o Vision captioning of detected image regions → caption-as-text embedding into the shared 1536-d vector space | Diagrams were now retrieved alongside text procedures. However, composite technical drawings (e.g., a page containing front view, side view, and exploded assembly in a single figure) produced a single generic caption, failing to surface specific sub-components during retrieval. | Introduced agentic figure decomposition. |
+| **V4: Agentic Figure Splitting** | GPT-4o semantic centre detection → Voronoi clustering → Mobile SAM neural masking → per-component isolation, captioning, and embedding | Current production version. Composite drawings are decomposed into individually captioned and retrievable components, enabling fine-grained retrieval of specific machine parts. | — |
+
+**Key design decision: caption-as-text embedding (V3).** Rather than using a separate visual embedding model (e.g., CLIP or ImageBind) that would require a dual-index retrieval architecture, the system converts each image into a detailed technical prose description via GPT-4o Vision and embeds this caption using the same `text-embedding-3-small` model as textual chunks. This unified embedding strategy enables direct cross-modal retrieval — a query about "motor wiring connections" retrieves both the relevant text procedure and the captioned wiring diagram — without maintaining separate visual indices or requiring modality-alignment layers.
+
+**Agentic figure splitting (V4).** Industrial manuals frequently contain composite drawings — a single page-level figure containing multiple distinct sub-diagrams. The V3 pipeline treated these as a single image, producing one generic caption. The V4 pipeline addresses this through a three-stage agentic decomposition: (i) GPT-4o identifies semantic centre points of distinct sub-diagrams within the composite image, (ii) Voronoi clustering assigns ink pixels to the nearest centre, and (iii) Mobile SAM neural masking produces pixel-accurate component isolation with white-background extraction. Each isolated sub-figure is independently captioned and embedded, enabling fine-grained retrieval of specific machine components.
+
 ---
 
 ## F. Human-in-the-Loop Workflow Validation
@@ -229,7 +246,7 @@ The system supports five retrieval modes, each optimised for a different operato
 
 The HITL workflow implements a five-gate quality control pipeline (Section III-D.1) that governs the progression from anomaly detection to organisational memory archival. Table XII traces the TEA_PUR_0001 case study through each gate.
 
-**TABLE XII. FIVE-GATE QUALITY CONTROL — TEA_PUR_0001 CASE STUDY**
+**TABLE XIII. FIVE-GATE QUALITY CONTROL — TEA_PUR_0001 CASE STUDY**
 
 | Gate | Validation Step | TEA_PUR_0001 Outcome |
 |------|----------------|---------------------|
@@ -243,7 +260,7 @@ The HITL workflow implements a five-gate quality control pipeline (Section III-D
 
 The four-class HITL intent classifier (GPT-4o-mini, temperature = 0.0) routes operator messages during the guided repair wizard. Table XIII presents the mapping and expected system behaviour.
 
-**TABLE XIII. HITL INTENT CLASSIFIER ROUTING**
+**TABLE XIV. HITL INTENT CLASSIFIER ROUTING**
 
 | Intent Class | Example Operator Input | System Response |
 |-------------|----------------------|-----------------|
@@ -254,11 +271,48 @@ The four-class HITL intent classifier (GPT-4o-mini, temperature = 0.0) routes op
 
 ---
 
-## G. System-Level Impact Metrics
+## G. Institutional Learning Validation
 
-Table XIV presents the composite system-level impact metrics comparing the Zynaptrix Industrial Copilot against the pre-AI operational baseline.
+To validate the continuous learning capability described in Section III-D, we conducted a longitudinal experiment across multiple resolved incidents on the PUMP-001 machine.
 
-**TABLE XIV. SYSTEM-LEVEL IMPACT ASSESSMENT**
+### 1) Knowledge Acquisition from Operator Experience
+
+During Incident #1021 (T-101 temperature deviation, 15% above moving average), the AI-guided repair wizard led the operator through a multi-phase diagnostic procedure based on the manufacturer manual. The manual's guidance for impeller clearance was generic — directing the operator to *"ensure clearance aligns with manufacturer specifications"* without specifying a concrete value.
+
+Upon completing the repair, the operator provided the following resolution narrative:
+
+> *"Your suggestions are very good, and I use error codes numbers to understand the problems."*
+
+Critically, the operator had adjusted the impeller clearance to **0.5mm** based on their own field experience — a specific value not present in the manufacturer manual. The system's five-gate quality pipeline (Section III-D.1) captured the entire conversation, including this operator-contributed repair detail, and GPT-4o summarised it into a structured maintenance entry archived into the `interaction_memory` vector database:
+
+**Archived Memory Entry (excerpt):**
+
+> *"Measured and adjusted impeller clearance to 0.5mm. [...] Leveraged error codes for better problem understanding, enhancing diagnostic efficiency."*
+
+This archived entry contains **operator-contributed knowledge** — the specific 0.5mm clearance value and the practical tip about using error codes — that originated from real-world field experience, not from the manufacturer manual.
+
+### 2) Learning in Action: Improved Guidance in Subsequent Incidents
+
+When a subsequent temperature anomaly was detected on the same PUMP-001 machine (Incident #2715), the Knowledge Retriever node's dual-source retrieval (Section III-C.2) automatically surfaced the archived memory entry alongside the standard manual content. The AI's response now **incorporated the operator's field-proven 0.5mm clearance value and the error-code diagnostic strategy** when guiding the next operator — knowledge that the system had learned from the previous incident resolution.
+
+**TABLE XV. INSTITUTIONAL LEARNING — BEFORE vs. AFTER MEMORY ARCHIVAL**
+
+| Aspect | First Incident (Manual Only) | Subsequent Incident (Manual + Learned Memory) |
+|--------|--------------------------------|----------------------|
+| Impeller clearance guidance | "Ensure clearance aligns with manufacturer specifications" (generic) | "Adjust clearance to 0.5mm" (specific, learned from previous operator) |
+| Diagnostic strategy | Standard sensor-based troubleshooting | "Use error codes for better problem understanding" (operator-contributed) |
+| Response source | Manual chunks only | Manual chunks + historical fix (dual-source retrieval) |
+| Knowledge origin | Static manufacturer documentation | Dynamic — augmented by field-validated operator experience |
+
+This experiment demonstrates the system's ability to **learn from past incidents**: an operator's field experience from one incident becomes part of the AI's knowledge base and is automatically surfaced to guide future operators facing similar faults — without any model retraining, prompt modification, or manual curation.
+
+---
+
+## H. System-Level Impact Metrics
+
+Table XVI presents the composite system-level impact metrics comparing the Zynaptrix Industrial Copilot against the pre-AI operational baseline.
+
+**TABLE XVI. SYSTEM-LEVEL IMPACT ASSESSMENT**
 
 | Metric | Baseline (Pre-AI) | Zynaptrix Copilot | Improvement |
 |--------|-------------------|-------------------|-------------|
@@ -271,7 +325,7 @@ Table XIV presents the composite system-level impact metrics comparing the Zynap
 
 ---
 
-## H. Evaluation Plots
+## I. Evaluation Plots
 
 The following diagnostic plots provide visual evidence of modelperformance for the TEA_PUR_0001 Dense Autoencoder:
 
