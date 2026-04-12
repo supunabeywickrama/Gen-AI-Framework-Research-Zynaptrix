@@ -14,27 +14,24 @@ import json
 def get_machine_config(machine_id: str) -> dict:
     """
     Returns a dict of {sensor_id: (mu, sigma, min_normal, max_normal, fault_high, fault_low)}.
-    Loads from sensor_configs.json if available; falls back to built-in profiles.
+    Loads from DB via SensorConfigLoader; falls back to built-in profiles.
     """
-    config_path = os.path.join(
-        os.path.dirname(__file__), "..", "data", "processed", "sensor_configs.json"
-    )
-    if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            all_configs = json.load(f)
-            if machine_id in all_configs:
-                dyn_cfg = {}
-                for sid, data in all_configs[machine_id].items():
-                    mu         = float(data.get("mu", 50.0))
-                    sigma      = float(data.get("sigma", 5.0))
-                    min_normal = float(data.get("min_normal", mu - 3 * sigma))
-                    max_normal = float(data.get("max_normal", mu + 3 * sigma))
-                    fault_high = float(data.get("fault_high", max_normal * 1.5))
-                    fl_raw     = data.get("fault_low")
-                    fault_low  = float(fl_raw) if fl_raw is not None else None
-                    dyn_cfg[sid] = (mu, sigma, min_normal, max_normal, fault_high, fault_low)
-                if dyn_cfg:
-                    return dyn_cfg
+    from services.sensor_config_loader import sensor_config_loader
+    config = sensor_config_loader.get_machine_config(machine_id)
+    
+    if config:
+        dyn_cfg = {}
+        for sid, data in config.items():
+            mu         = float(data.get("mu", 50.0))
+            sigma      = float(data.get("sigma", 5.0))
+            min_normal = float(data.get("min_normal", mu - 3 * sigma))
+            max_normal = float(data.get("max_normal", mu + 3 * sigma))
+            fault_high = float(data.get("fault_high", max_normal * 1.5))
+            fl_raw     = data.get("fault_low")
+            fault_low  = float(fl_raw) if fl_raw is not None else None
+            dyn_cfg[sid] = (mu, sigma, min_normal, max_normal, fault_high, fault_low)
+        if dyn_cfg:
+            return dyn_cfg
 
     # ── Fallback built-in profiles ─────────────────────────────────────────
     if "LATHE" in machine_id.upper():

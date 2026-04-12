@@ -417,12 +417,17 @@ def knowledge_retrieval_node(state: CopilotState):
                 chat_history=state.get('chat_history', '')
             )
             
-            # API URL configuration with dynamic fallback
-            api_url = os.getenv("API_URL", "http://127.0.0.1:8000")
+            # Unified API configuration from settings
+            api_url = settings.api_url
             if api_url.endswith('/'):
                 api_url = api_url[:-1]
 
             for img_path in rag_response.get("images", []):
+                # ⭐ CLOUDINARY SUPPORT: If it's already an absolute URL, use it directly
+                if img_path.startswith('http'):
+                    images.append(img_path)
+                    continue
+                    
                 # CROSS-PLATFORM NORMALIZATION
                 normalized_path = img_path.replace('\\', '/')
                 # Transform filesystem path to virtual mount path (/static)

@@ -256,11 +256,16 @@ async def system_assistant(req: AssistantQuery, db: Session = Depends(get_db)):
         # 📸 Normalize image paths to full Web URLs
         raw_images = rag_res.get('images', [])
         images = []
-        api_url = os.getenv("API_URL", "http://127.0.0.1:8000")
+        # Unified API configuration from settings
+        api_url = settings.api_url
         if api_url.endswith('/'):
             api_url = api_url[:-1]
 
         for img_path in raw_images:
+            if img_path.startswith('http'):
+                images.append(img_path)
+                continue
+                
             normalized_path = img_path.replace('\\', '/')
             web_path = normalized_path.replace("data/", "/static/")
             if not web_path.startswith('/'):

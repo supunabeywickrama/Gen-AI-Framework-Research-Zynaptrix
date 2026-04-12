@@ -84,16 +84,71 @@ def compute_threshold(errors: np.ndarray, n_sigma: float = 2.0) -> float:
 
 
 def save_threshold(machine_id: str, key: str, value: float) -> None:
+    # 1. Save locally for legacy support
     thresholds = {}
     if os.path.exists(THRESHOLD_FILE):
-        with open(THRESHOLD_FILE) as f:
-            thresholds = json.load(f)
+        try:
+            with open(THRESHOLD_FILE) as f:
+                thresholds = json.load(f)
+        except: pass
     
-    # Store with machine prefix
     thresholds[f"{machine_id}_{key}"] = value
     with open(THRESHOLD_FILE, "w") as f:
         json.dump(thresholds, f, indent=2)
-    log.info(f"Threshold for {machine_id}_{key} saved → {THRESHOLD_FILE}")
+    log.info(f"Threshold saved locally → {THRESHOLD_FILE}")
+
+    # 2. Save to Postgres
+    try:
+        from unified_rag.db.database import SessionLocal
+        from unified_rag.db.models import AnomalyThreshold
+        from datetime import datetime
+        
+        db = SessionLocal()
+        try:
+            record = db.query(AnomalyThreshold).filter(AnomalyThreshold.machine_id == machine_id, 
+                                                        AnomalyThreshold.threshold_type == key).first()
+            if not record:
+                record = AnomalyThreshold(machine_id=machine_id, threshold_type=key)
+                db.add(record)
+            
+            record.value = float(value)
+            record.updated_at = datetime.now().isoformat()
+            db.commit()
+            log.info(f"✅ Threshold synchronized to DB for {machine_id}_{key}")
+        finally:
+            db.close()
+    except Exception as e:
+        log.error(f"⚠️ Threshold DB sync failed: {e}")
+
+
+def upload_model_to_cloud(machine_id: str, model_type: str, local_path: str):
+    try:
+        from services.cloudinary_service import CloudinaryService
+        from unified_rag.db.database import SessionLocal
+        from unified_rag.db.models import MachineAsset
+        from datetime import datetime
+
+        cloud = CloudinaryService()
+        if cloud.enabled:
+            log.info(f"☁️ Uploading {model_type} model for {machine_id} to Cloudinary...")
+            url = cloud.upload_file(local_path, public_id=f"model_{model_type}_{machine_id}", 
+                                    folder="industrial_copilot/assets/models")
+            if url:
+                db = SessionLocal()
+                try:
+                    asset = db.query(MachineAsset).filter(MachineAsset.machine_id == machine_id, 
+                                                         MachineAsset.asset_type == f"model_{model_type}").first()
+                    if not asset:
+                        asset = MachineAsset(machine_id=machine_id, asset_type=f"model_{model_type}")
+                        db.add(asset)
+                    asset.url = url
+                    asset.updated_at = datetime.now().isoformat()
+                    db.commit()
+                    log.info(f"✅ Model registered in DB: {url}")
+                finally:
+                    db.close()
+    except Exception as e:
+        log.error(f"⚠️ Cloud model sync failed: {e}")
 
 
 def plot_loss(history, title: str, out_path: str) -> None:
@@ -156,7 +211,10 @@ def train_dense(machine_id: str = "PUMP-001"):
     os.makedirs(MODEL_DIR, exist_ok=True)
     paths = get_model_paths(machine_id)
     model.save(paths["dense"])
-    log.info(f"Model saved → {paths['dense']}")
+    log.info(f"Model saved locally → {paths['dense']}")
+    
+    # Cloud sync
+    upload_model_to_cloud(machine_id, "dense", paths["dense"])
 
     # Compute and save threshold
     errors = dense_error(model, X_train)
@@ -201,7 +259,10 @@ def train_lstm(machine_id: str = "PUMP-001"):
     os.makedirs(MODEL_DIR, exist_ok=True)
     paths = get_model_paths(machine_id)
     model.save(paths["lstm"])
-    log.info(f"Model saved → {paths['lstm']}")
+    log.info(f"Model saved locally → {paths['lstm']}")
+
+    # Cloud sync
+    upload_model_to_cloud(machine_id, "lstm", paths["lstm"])
 
     errors = lstm_error(model, X_train)
     threshold = compute_threshold(errors)

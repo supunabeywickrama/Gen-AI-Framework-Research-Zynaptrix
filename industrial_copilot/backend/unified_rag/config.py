@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     
     openai_api_key: str = Field(..., alias="OPENAI_API_KEY")
     log_level: str = Field("INFO", alias="LOG_LEVEL")
+    api_url: str = Field("http://127.0.0.1:8000", alias="API_URL")
+    
+    # Cloudinary Config (added 2026-04-12)
+    cloudinary_cloud_name: Optional[str] = Field(None, alias="CLOUDINARY_CLOUD_NAME")
+    cloudinary_api_key: Optional[str] = Field(None, alias="CLOUDINARY_API_KEY")
+    cloudinary_api_secret: Optional[str] = Field(None, alias="CLOUDINARY_API_SECRET")
     
     @property
     def database_url(self) -> str:
