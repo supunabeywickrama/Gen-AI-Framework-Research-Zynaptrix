@@ -79,7 +79,7 @@ Table I synthesises the capability landscape across existing paradigms.
 | Multimodal LLM (Vision) | ✗ | Partial | Partial | ✗ | ✗ | ✗ |
 | **Zynaptrix Copilot** | **✓** | **✓** | **✓** | **✓** | **✓** | **✓** |
 
-No existing approach satisfies all six dimensions simultaneously. There exists no validated framework integrating real-time anomaly detection, LLM-based root cause analysis, caption-based multimodal document grounding, multi-agent synthesis, safety-verified HITL procedures, and bidirectional incident-adaptive learning into a unified system. The Zynaptrix Industrial Copilot is designed explicitly to fill this gap.
+No existing approach satisfies all six dimensions simultaneously. Traditional CMMS platforms store incident logs in free-text fields queryable only by exact string matching, making historical knowledge practically inaccessible during time-critical faults — fundamentally different from retrieval-ranked vectorised institutional memory that enables semantic access to historically successful repairs. There exists no validated framework integrating real-time anomaly detection, LLM-based root cause analysis, caption-based multimodal document grounding, multi-agent synthesis, safety-verified HITL procedures, and bidirectional incident-adaptive learning into a unified system. The Zynaptrix Industrial Copilot is designed explicitly to fill this gap.
 
 ---
 
@@ -153,7 +153,7 @@ The **Central Assistant** provides session-based freeform knowledge access, clas
 
 #### 1) Five-Gate Quality Pipeline
 
-Not all outputs qualify for memory. The archival pathway, illustrated in Fig. 3, requires: **Gate 1** — Safety Critic approval; **Gate 2** — per-step AI verification via EVALUATION mode; **Gate 3** — explicit operator resolution with free-text fix narrative; **Gate 4** — GPT-4o summarisation into structured Problem/Root Cause/Solution; **Gate 5** — vectorisation via text-embedding-3-small and insertion into interaction_memory tagged with machine_id. This ensures retrieval quality improves with scale rather than degrading through noise accumulation.
+Not all outputs qualify for memory. The archival pathway, illustrated in Fig. 3, requires: **Gate 1** — Safety Critic approval; **Gate 2** — per-step AI verification via EVALUATION mode; **Gate 3** — explicit operator resolution with free-text fix narrative; **Gate 4** — GPT-4o summarisation into structured Problem/Root Cause/Solution; **Gate 5** — vectorisation via text-embedding-3-small and insertion into interaction_memory tagged with machine_id. This ensures retrieval quality improves with scale rather than degrading through noise accumulation. During future incidents, retrieval is filtered by machine_id, prioritising same-machine memories while semantically similar incidents from fleet-wide same-model equipment contribute broader pattern intelligence. As validated memories accumulate, the system progressively shifts from purely manual-grounded diagnosis to experience-augmented reasoning — without any model retraining, prompt modification, or manual curation.
 
 ![Fig. 3. Five-gate quality control pipeline for organisational memory archival. Only Critic-approved, step-verified, operator-resolved, and LLM-normalised incident resolutions enter the interaction memory.](figures/fig3_quality_gates.png)
 
@@ -182,7 +182,7 @@ Since no fault events were observed, telemetry was synthetically generated using
 | Rotary Encoder | Motor Speed | rpm | 1400–1600 | >1700 |
 | Ground Fault CT | Leakage Current | A | 0.02–0.10 | >0.20 |
 
-A controlled dataset of **N = 20,000 readings** was generated comprising five labelled states: normal (14,000, 70%), machine fault (3,000, 15%), sensor freeze (1,500, 7.5%), sensor drift (1,000, 5%), and idle (500, 2.5%). The 70:30 normal-to-anomaly ratio reflects class imbalance inherent in real industrial environments. The Dense Autoencoder (4 → 32 → 16 → 32 → 4) was trained on normal data with threshold θ = 0.2860 (mean + 2σ). The manufacturer's manual was ingested through the full RAG pipeline.
+A controlled dataset of **N = 20,000 readings** was generated comprising five labelled states: normal (14,000, 70%), machine fault (3,000, 15%), sensor freeze (1,500, 7.5%), sensor drift (1,000, 5%), and idle (500, 2.5%). The 70:30 normal-to-anomaly ratio reflects class imbalance inherent in real industrial environments. The Dense Autoencoder (4 → 32 → 16 → 32 → 4, ReLU activations, linear output) was trained exclusively on the 14,000 normal-state readings using the Adam optimiser with MSE loss over 50 epochs (10% validation split). The anomaly threshold was calibrated at θ = 0.2860 using the mean + 2σ method on the training MSE distribution. The manufacturer's technical manual (TEA_PUR_0001_Manual.pdf) was ingested through the multimodal RAG pipeline (Section III-C), producing structural text chunks, table extractions, and vision-captioned figure descriptions — all embedded and stored in the pgvector database for asset-isolated retrieval.
 
 ### C. Anomaly Detection Performance
 
